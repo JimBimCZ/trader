@@ -1,0 +1,1 @@
+"""Trader backend application."""
