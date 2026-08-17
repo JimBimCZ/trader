@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# GitHub Actions
+#   Inherited workflows kept locally until their secrets are configured.
+.github/workflows/
