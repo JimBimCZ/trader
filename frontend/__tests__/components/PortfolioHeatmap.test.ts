@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { pnlToColor, pnlOpacity } from "@/components/portfolio/PortfolioHeatmap";
-import { colors } from "@/lib/theme";
+import { palettes } from "@/lib/theme";
 
 /**
  * The colour scale is the risky logic here, not Recharts' rendering, so it is
- * exported and tested directly.
+ * exported and tested directly. It takes a palette, so the same scale is
+ * asserted against the appearance it is drawing for.
  */
+const { colors } = palettes.light;
+
 describe("pnlToColor", () => {
   it("maps a gain to the profit end", () => {
     expect(pnlToColor(5)).toBe(colors.heatmapProfitDeep);
@@ -23,6 +26,11 @@ describe("pnlToColor", () => {
   it("saturates beyond the clamp so one outlier cannot flatten the rest", () => {
     expect(pnlToColor(200)).toBe(pnlToColor(10));
     expect(pnlToColor(-200)).toBe(pnlToColor(-10));
+  });
+
+  it("answers in the appearance it was handed", () => {
+    expect(pnlToColor(5, palettes.dark)).toBe(palettes.dark.colors.heatmapProfitDeep);
+    expect(pnlToColor(5, palettes.dark)).not.toBe(pnlToColor(5, palettes.light));
   });
 });
 

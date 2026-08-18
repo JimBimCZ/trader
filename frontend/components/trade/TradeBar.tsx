@@ -6,6 +6,7 @@ import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { formatPrice } from "@/lib/format";
 import { Button } from "../ui/Button";
+import { SegmentTrack } from "../ui/Segmented";
 import { ErrorNote } from "../ui/ErrorNote";
 
 export function TradeBar() {
@@ -39,7 +40,7 @@ export function TradeBar() {
   return (
     <section className="rise card px-4 py-3" aria-label="Trade">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1.5">
           <span className="field-label">Symbol</span>
           <input
             value={ticker}
@@ -51,11 +52,11 @@ export function TradeBar() {
             maxLength={5}
             aria-label="Ticker to trade"
             data-testid="trade-ticker"
-            className="field w-32 font-display font-bold uppercase tracking-wide placeholder:font-normal placeholder:normal-case"
+            className="field w-28 font-semibold uppercase tracking-wide placeholder:font-normal placeholder:normal-case"
           />
         </label>
 
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1.5">
           <span className="field-label">Units</span>
           <input
             value={quantity}
@@ -69,33 +70,49 @@ export function TradeBar() {
             placeholder="0"
             aria-label="Quantity to trade"
             data-testid="trade-quantity"
-            className="field w-32"
+            className="field w-28"
           />
         </label>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <span className="field-label">Order value</span>
           <span
-            className="py-2 text-sm font-semibold text-text"
+            className="py-2 text-[15px] font-semibold tracking-[-0.01em] text-text"
             data-testid="trade-estimate"
           >
             {estimate === null ? "—" : formatPrice(estimate)}
           </span>
         </div>
 
-        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+        {/* Sell and Buy are two actions, not two states of one choice, so
+            they cannot be a selection — but they are a pair, and the track is
+            what says so. Each half stays its own button, keeping its own fill
+            and its own direction colour. */}
+        <SegmentTrack className="w-full sm:ml-auto sm:w-auto">
           {/* Disabled while a request is in flight, which is all the
               double-submit protection a fake-money demo warrants. */}
-          <Button variant="sell" disabled={!valid || pending} onClick={() => submit("sell")} data-testid="sell-button" className="flex-1 sm:w-24 sm:flex-none">
+          <Button
+            variant="sell"
+            disabled={!valid || pending}
+            onClick={() => submit("sell")}
+            data-testid="sell-button"
+            className="flex-1 py-1.5 sm:w-24 sm:flex-none"
+          >
             Sell
           </Button>
-          <Button variant="buy" disabled={!valid || pending} onClick={() => submit("buy")} data-testid="buy-button" className="flex-1 sm:w-24 sm:flex-none">
+          <Button
+            variant="buy"
+            disabled={!valid || pending}
+            onClick={() => submit("buy")}
+            data-testid="buy-button"
+            className="flex-1 py-1.5 sm:w-24 sm:flex-none"
+          >
             Buy
           </Button>
-        </div>
+        </SegmentTrack>
       </div>
 
-      <p className="mt-2 text-[11px] text-text-faint">
+      <p className="mt-2.5 text-[11px] text-text-faint">
         Market order, filled instantly at the live price. No fees.
       </p>
 

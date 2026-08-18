@@ -4,7 +4,8 @@ import { Treemap, ResponsiveContainer } from "recharts";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { valueHolding } from "@/lib/portfolio";
-import { colors } from "@/lib/theme";
+import { usePalette } from "@/lib/useTheme";
+import { palettes, type Palette } from "@/lib/theme";
 import { directionGlyph, formatSignedPercent } from "@/lib/format";
 import { CHART_MIN_H } from "../layout/panels";
 
@@ -12,10 +13,13 @@ import { CHART_MIN_H } from "../layout/panels";
  * Maps a position's return to a colour on the loss-neutral-profit scale.
  *
  * Saturates at ±10% so one runaway position does not flatten every other
- * cell to the same neutral grey. Exported for direct unit testing — this is
- * the risky part, not Recharts' rendering.
+ * cell to the same neutral grey. Takes the palette rather than reaching for
+ * it, both because the scale has to answer differently in each appearance and
+ * because that keeps it a pure function — this is the risky part of the
+ * component, and it is unit-tested directly rather than through Recharts.
  */
-export function pnlToColor(pctChange: number): string {
+export function pnlToColor(pctChange: number, palette: Palette = palettes.light): string {
+  const { colors } = palette;
   const clamped = Math.max(-10, Math.min(10, pctChange)) / 10;
   if (Math.abs(clamped) < 0.02) return colors.heatmapNeutral;
   return clamped > 0 ? colors.heatmapProfitDeep : colors.heatmapLossDeep;
@@ -24,9 +28,9 @@ export function pnlToColor(pctChange: number): string {
 /**
  * How saturated that colour is drawn.
  *
- * Capped below full strength so the dark label keeps 4.5:1 even on the
- * deepest loss cell — on a white surface the fill is what dictates the text
- * contrast, not the other way round.
+ * Capped below full strength so the label keeps 4.5:1 even on the deepest
+ * loss cell — the fill is what dictates the text contrast, not the other way
+ * round, in both appearances.
  */
 export function pnlOpacity(pctChange: number): number {
   const magnitude = Math.min(Math.abs(pctChange), 10) / 10;
@@ -42,6 +46,8 @@ interface CellProps {
   ticker?: string;
   pct?: number;
   weight?: number;
+  /** Recharts clones the content element, so this arrives as a prop. */
+  palette?: Palette;
 }
 
 function Cell({
@@ -53,7 +59,9 @@ function Cell({
   ticker = "",
   pct = 0,
   weight = 0,
+  palette = palettes.light,
 }: CellProps) {
+  const { colors } = palette;
   // Recharts invokes the content renderer for the root node too. Drawing it
   // would stack a second rectangle and label on top of the real cells.
   if (depth === 0) return null;
@@ -70,8 +78,8 @@ function Cell({
         y={y + 1.5}
         width={Math.max(width - 3, 0)}
         height={Math.max(height - 3, 0)}
-        rx={10}
-        fill={pnlToColor(pct)}
+        rx={12}
+        fill={pnlToColor(pct, palette)}
         fillOpacity={pnlOpacity(pct)}
         stroke={colors.surface}
         strokeWidth={2}
@@ -101,6 +109,7 @@ function Cell({
 }
 
 export function PortfolioHeatmap() {
+  const palette = usePalette();
   const positions = usePortfolioStore((s) => s.positions);
   const livePrices = usePriceStore((s) => s.prices);
 
@@ -140,7 +149,7 @@ export function PortfolioHeatmap() {
               data={data}
               dataKey="size"
               isAnimationActive={false}
-              content={<Cell />}
+              content={<Cell palette={palette} />}
             />
           </ResponsiveContainer>
         )}

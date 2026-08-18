@@ -4,7 +4,8 @@ import { memo, useEffect, useRef } from "react";
 import { createChart, ColorType } from "lightweight-charts";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { fetchHistory } from "@/lib/api/endpoints";
-import { colors, instrumentColor } from "@/lib/theme";
+import { instrumentColor } from "@/lib/theme";
+import { usePalette } from "@/lib/useTheme";
 import { formatClockSeconds } from "@/lib/format";
 import { PriceCell } from "../ui/PriceCell";
 import { ChangeBadge } from "../ui/ChangeBadge";
@@ -33,15 +34,15 @@ const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
  */
 export function MainChart({ ticker }: { ticker: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { appearance, colors } = usePalette();
 
   useEffect(() => {
     if (!containerRef.current || !ticker) return;
 
-    // Canvas font strings cannot resolve a CSS custom property, so the
-    // generated family name is read off the document once per mount.
-    const bodyFont =
-      getComputedStyle(document.documentElement).getPropertyValue("--font-body").trim() ||
-      "system-ui";
+    // A canvas font string cannot name a font stack the way CSS can, so the
+    // resolved family is read off the document once per mount — which is also
+    // how the chart ends up lettered in SF on the machines that have it.
+    const bodyFont = getComputedStyle(document.body).fontFamily || "system-ui";
 
     const chart = createChart(containerRef.current, {
       layout: {
@@ -73,7 +74,7 @@ export function MainChart({ ticker }: { ticker: string | null }) {
     // The line wears the instrument's own colour, the same one on its chip in
     // the watchlist — so selecting a ticker recolours the chart to match the
     // row you clicked, and green stays reserved for "up".
-    const tint = instrumentColor(ticker);
+    const tint = instrumentColor(ticker, appearance);
     const series = chart.addAreaSeries({
       lineColor: tint,
       topColor: `${tint}38`,
@@ -134,7 +135,9 @@ export function MainChart({ ticker }: { ticker: string | null }) {
       unsubscribe();
       chart.remove();
     };
-  }, [ticker]);
+    // The palette is a dependency, not a detail: the canvas holds its colours
+    // rather than reading them, so switching appearance has to rebuild it.
+  }, [ticker, appearance, colors]);
 
   const shell = `rise card flex ${PANELS.chart.minH} flex-1 flex-col lg:min-h-0`;
 

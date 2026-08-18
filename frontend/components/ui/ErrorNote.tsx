@@ -16,7 +16,7 @@ export function ErrorNote({
     <p
       role="alert"
       data-testid={testId}
-      className={`rounded-xl bg-down-wash px-3 py-2 text-xs font-medium text-down-text ${className}`}
+      className={`rounded-control bg-down-wash px-3 py-2 text-[12px] font-medium text-down-text ${className}`}
     >
       {children}
     </p>

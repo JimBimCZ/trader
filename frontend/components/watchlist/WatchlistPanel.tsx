@@ -25,7 +25,7 @@ export function WatchlistPanel() {
   return (
     <section
       id={PANELS.watchlist.id}
-      className="rise card flex max-h-[70vh] flex-1 flex-col lg:max-h-none lg:min-h-0"
+      className="rise card flex max-h-[70vh] flex-1 flex-col overflow-hidden lg:max-h-none lg:min-h-0"
       aria-label="Watchlist"
     >
       <header className="card-title">
@@ -35,18 +35,20 @@ export function WatchlistPanel() {
         </span>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2" data-testid="watchlist">
+      {/* A grouped inset list: no padding between the rows, so the inset
+          separators are what divide them. */}
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="watchlist">
         {tickers.map((ticker) => (
           <WatchlistRow key={ticker} ticker={ticker} />
         ))}
         {tickers.length === 0 && (
-          <p className="px-3 py-8 text-center text-sm text-text-muted">
+          <p className="px-4 py-8 text-center text-[13px] text-text-muted">
             Nothing on the list yet. Add a symbol below to start watching it.
           </p>
         )}
       </div>
 
-      <form onSubmit={submit} className="flex gap-2 border-t border-border p-3">
+      <form onSubmit={submit} className="flex gap-2 border-t-hairline border-border p-3">
         <input
           value={draft}
           onChange={(event) => {
@@ -59,7 +61,7 @@ export function WatchlistPanel() {
           data-testid="add-ticker-input"
           className="field min-w-0 flex-1 uppercase tracking-wide placeholder:normal-case placeholder:tracking-normal"
         />
-        <Button type="submit" variant="ghost" data-testid="add-ticker-submit">
+        <Button type="submit" variant="tinted" data-testid="add-ticker-submit">
           Add
         </Button>
       </form>

@@ -32,7 +32,7 @@ export function PriceCell({
   return (
     <span
       key={snapshot.timestamp}
-      className={`rounded-md px-1 font-semibold text-text ${flash} ${className}`}
+      className={`rounded-[6px] px-1 font-semibold text-text ${flash} ${className}`}
       data-testid={testId ?? `price-${ticker}`}
     >
       {formatPrice(snapshot.price)}

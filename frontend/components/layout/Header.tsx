@@ -4,14 +4,25 @@ import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { valuePortfolio } from "@/lib/portfolio";
 import { instrumentColor } from "@/lib/theme";
+import { usePalette } from "@/lib/useTheme";
 import { formatPrice, formatSignedPercent } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
+import { ThemeToggle } from "../ui/ThemeToggle";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
+/**
+ * The unified toolbar.
+ *
+ * Not a card: on macOS the toolbar is chrome, so it takes the same
+ * translucent material as the sidebar rather than floating as a third plane.
+ * The portfolio value is the window's title in everything but name, which is
+ * why it is the only large type on the page.
+ */
 export function Header() {
   const cash = usePortfolioStore((s) => s.cashBalance);
   const positions = usePortfolioStore((s) => s.positions);
   const prices = usePriceStore((s) => s.prices);
+  const { appearance } = usePalette();
 
   // Recomputed on every tick from positions x live prices: the REST total is
   // only a reconciliation point, not the live number.
@@ -26,17 +37,19 @@ export function Header() {
   const share = (value: number) => (totalValue ? (value / totalValue) * 100 : 0);
 
   return (
-    <header className="rise card flex flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-4">
+    <header className="rise material flex flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-3.5">
       <div className="min-w-0">
         <p className="field-label">Portfolio value</p>
-        <div className="mt-0.5 flex flex-wrap items-baseline gap-3">
+        <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
+          {/* SF Pro Display territory: large, tightly tracked, and the only
+              thing on the page set at this size. */}
           <span
-            className="text-[32px] font-bold leading-none tracking-tight text-text"
+            className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text"
             data-testid="total-value"
           >
             {formatPrice(totalValue)}
           </span>
-          <span className="text-sm font-semibold" data-testid="unrealized-pnl">
+          <span className="text-[13px] font-semibold" data-testid="unrealized-pnl">
             <SignedValue value={unrealized} />
             <span className="ml-1 opacity-70">({formatSignedPercent(unrealizedPercent)})</span>
           </span>
@@ -45,10 +58,10 @@ export function Header() {
 
       {/* Allocation, at a glance. Each segment wears the holding's own colour,
           the same one it carries in the watchlist and the positions table. */}
-      <div className="min-w-[220px] flex-1">
+      <div className="min-w-[200px] flex-1">
         <div className="flex items-baseline justify-between">
           <p className="field-label">Allocation</p>
-          <p className="text-xs font-medium text-text-muted">
+          <p className="text-[12px] font-medium text-text-muted">
             <span className="text-text" data-testid="cash-balance">
               {formatPrice(cash)}
             </span>{" "}
@@ -56,7 +69,7 @@ export function Header() {
           </p>
         </div>
         <div
-          className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-surface-sunk"
+          className="mt-2 flex h-2 gap-[2px] overflow-hidden rounded-full bg-surface-sunk"
           role="img"
           aria-label={
             holdings.length
@@ -70,16 +83,20 @@ export function Header() {
             <span
               key={holding.ticker}
               title={`${holding.ticker} · ${formatPrice(holding.value)}`}
+              className="rounded-full"
               style={{
                 width: `${share(holding.value)}%`,
-                backgroundColor: instrumentColor(holding.ticker),
+                backgroundColor: instrumentColor(holding.ticker, appearance),
               }}
             />
           ))}
         </div>
       </div>
 
-      <ConnectionStatusDot />
+      <div className="flex shrink-0 items-center gap-2.5">
+        <ConnectionStatusDot />
+        <ThemeToggle />
+      </div>
     </header>
   );
 }
