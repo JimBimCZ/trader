@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from ..errors import InvalidTickerError
+
 #: A ticker is 1-5 ASCII letters once canonicalized. Deliberately strict:
 #: it rejects hallucinated symbols, empty strings, and injection attempts
 #: before they ever reach the database or an external API.
@@ -33,10 +35,13 @@ def is_valid_ticker(ticker: str) -> bool:
 def validate_ticker(ticker: str) -> str:
     """Canonicalize and validate, returning the canonical form.
 
-    Raises ValueError if the ticker is not 1-5 letters. Callers at the API
-    boundary translate this into an INVALID_TICKER error response.
+    Raises InvalidTickerError, which the error handlers render as a 400 with
+    code INVALID_TICKER. Raising the typed error here rather than a bare
+    ValueError means no call site can forget to translate it.
     """
     canonical = canonicalize_ticker(ticker)
     if not TICKER_PATTERN.match(canonical):
-        raise ValueError(f"Invalid ticker: {ticker!r}")
+        raise InvalidTickerError(
+            f"'{ticker.strip()}' is not a valid ticker. Use 1-5 letters, e.g. AAPL."
+        )
     return canonical

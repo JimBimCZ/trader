@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.market.tickers import canonicalize_ticker, is_valid_ticker, validate_ticker
+from app.errors import InvalidTickerError
+from app.market.tickers import (
+    canonicalize_ticker,
+    is_valid_ticker,
+    validate_ticker,
+)
 
 
 class TestCanonicalizeTicker:
@@ -43,7 +48,13 @@ class TestValidateTicker:
         """A valid ticker is returned canonicalized."""
         assert validate_ticker(" nvda ") == "NVDA"
 
-    def test_raises_on_invalid(self):
-        """An invalid ticker raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid ticker"):
+    def test_raises_the_typed_error_on_invalid(self):
+        """An invalid ticker raises InvalidTickerError, not a bare ValueError.
+
+        The typed error is what the handlers render as a 400 INVALID_TICKER;
+        a ValueError would escape as a 500.
+        """
+        with pytest.raises(InvalidTickerError) as exc_info:
             validate_ticker("BRK.B")
+        assert exc_info.value.code == "INVALID_TICKER"
+        assert exc_info.value.status_code == 400

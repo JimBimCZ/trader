@@ -101,3 +101,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         # Log the real cause; never leak internals to the client.
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
         return _envelope("INTERNAL_ERROR", "An unexpected error occurred.", 500)
+
+
+class FrontendNotBuiltError(AppError):
+    """The static export is missing from the image or working tree.
+
+    A deployment problem rather than a client one, so it is reported as 503
+    instead of a 404 that would look like a bad URL.
+    """
+
+    status_code, code = 503, "FRONTEND_NOT_BUILT"

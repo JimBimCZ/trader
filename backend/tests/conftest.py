@@ -56,3 +56,28 @@ def priced_cache(price_cache: PriceCache) -> PriceCache:
     for ticker, price in SEED_PRICES.items():
         price_cache.update(ticker, price, session_open=price)
     return price_cache
+
+
+@pytest_asyncio.fixture
+async def services(seeded_db, settings: Settings, price_cache: PriceCache):
+    """Fully wired services against a seeded temp database and a stub source."""
+    from tests.conftest_services import Services
+
+    built = Services(seeded_db, settings, price_cache)
+    await built.reconciler.reconcile()
+    return built
+
+
+@pytest.fixture
+def api_client(settings: Settings):
+    """A TestClient over a fully started app on a temp database.
+
+    Entering the context manager runs the real lifespan, so the simulator,
+    history collector, and snapshot writer are all live.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app(settings)) as client:
+        yield client
