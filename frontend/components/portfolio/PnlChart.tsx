@@ -10,18 +10,17 @@ import {
   YAxis,
 } from "recharts";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
-import { colors } from "@/lib/theme";
-import { formatCompact, formatPrice } from "@/lib/format";
+import { colors, shadows } from "@/lib/theme";
+import { formatCompact, formatIsoClock, formatPrice } from "@/lib/format";
+import { SignedValue } from "../ui/SignedValue";
+import { CHART_MIN_H } from "../layout/panels";
 
 /**
  * Whole dollars are unreadable when the whole series spans a few dollars —
  * every tick renders as the same number — so the precision follows the range.
  */
 function axisFormatter(range: number) {
-  return (value: number) =>
-    range < 50
-      ? `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : formatCompact(value);
+  return (value: number) => (range < 50 ? formatPrice(value) : formatCompact(value));
 }
 
 /**
@@ -41,10 +40,7 @@ export function PnlChart() {
   }, [refreshHistory]);
 
   const data = history.map((point) => ({
-    time: new Date(point.recordedAt).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
+    time: formatIsoClock(point.recordedAt),
     value: point.totalValue,
   }));
 
@@ -57,20 +53,30 @@ export function PnlChart() {
   const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
 
   return (
-    <section className="panel flex min-h-0 flex-col" aria-label="Portfolio value over time">
-      <header className="panel-title">Portfolio value</header>
+    <section
+      className={`rise card flex ${CHART_MIN_H} flex-col lg:min-h-0`}
+      aria-label="Portfolio value over time"
+    >
+      <header className="card-title">
+        <span>Performance</span>
+        {data.length >= 2 && (
+          <span className="text-[11px] font-semibold">
+            <SignedValue value={last - first} /> this session
+          </span>
+        )}
+      </header>
       <div className="min-h-0 flex-1 p-2" data-testid="pnl-chart">
         {data.length < 2 ? (
-          <p className="flex h-full items-center justify-center text-xs text-text-muted">
-            Collecting data…
+          <p className="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
+            Charting starts once the first two snapshots land, about a minute in.
           </p>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="pnl-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={stroke} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={stroke} stopOpacity={0.02} />
+                  <stop offset="0%" stopColor={stroke} stopOpacity={0.26} />
+                  <stop offset="100%" stopColor={stroke} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -90,9 +96,10 @@ export function PnlChart() {
               />
               <Tooltip
                 contentStyle={{
-                  background: colors.bgRaised,
+                  background: colors.surface,
                   border: `1px solid ${colors.border}`,
-                  borderRadius: 4,
+                  borderRadius: 12,
+                  boxShadow: shadows.pop,
                   fontSize: 12,
                 }}
                 labelStyle={{ color: colors.textMuted }}

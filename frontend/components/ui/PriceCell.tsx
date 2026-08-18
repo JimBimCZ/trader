@@ -10,11 +10,20 @@ import { formatPrice } from "@/lib/format";
  * causes, and the key forces the CSS animation to restart. No timer, no extra
  * state, no second render to clear the highlight.
  */
-export function PriceCell({ ticker }: { ticker: string }) {
+export function PriceCell({
+  ticker,
+  className = "",
+  testId,
+}: {
+  ticker: string;
+  className?: string;
+  /** Defaults to the watchlist's id; a second instance must pass its own. */
+  testId?: string;
+}) {
   const snapshot = usePriceStore((state) => state.prices[ticker]);
 
   if (!snapshot) {
-    return <span className="tabular-nums text-flat">—</span>;
+    return <span className={`text-text-faint ${className}`}>—</span>;
   }
 
   const flash =
@@ -23,8 +32,8 @@ export function PriceCell({ ticker }: { ticker: string }) {
   return (
     <span
       key={snapshot.timestamp}
-      className={`rounded px-1 tabular-nums text-text ${flash}`}
-      data-testid={`price-${ticker}`}
+      className={`rounded-md px-1 font-semibold text-text ${flash} ${className}`}
+      data-testid={testId ?? `price-${ticker}`}
     >
       {formatPrice(snapshot.price)}
     </span>

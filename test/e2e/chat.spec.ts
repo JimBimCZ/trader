@@ -17,7 +17,7 @@ test.describe("AI assistant", () => {
     await app.getByTestId("chat-input").fill("buy 10 shares of AAPL");
     await app.getByTestId("chat-send").click();
 
-    await expect(app.getByTestId("chat-actions").last()).toContainText("BUY 10 AAPL");
+    await expect(app.getByTestId("chat-actions").last()).toContainText("Bought 10 AAPL");
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
   });
 

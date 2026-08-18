@@ -43,7 +43,7 @@ describe("ChatMessageBubble", () => {
       />,
     );
 
-    expect(screen.getByTestId("chat-actions")).toHaveTextContent("BUY 10 AAPL @ $191.24");
+    expect(screen.getByTestId("chat-actions")).toHaveTextContent("Bought 10 AAPL at $191.24");
   });
 
   it("renders a rejected trade with its reason", () => {

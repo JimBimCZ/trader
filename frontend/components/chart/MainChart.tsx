@@ -1,10 +1,27 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { createChart, type IChartApi, type ISeriesApi, ColorType } from "lightweight-charts";
+import { memo, useEffect, useRef } from "react";
+import { createChart, ColorType } from "lightweight-charts";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { fetchHistory } from "@/lib/api/endpoints";
-import { colors } from "@/lib/theme";
+import { colors, instrumentColor } from "@/lib/theme";
+import { formatClockSeconds } from "@/lib/format";
+import { PriceCell } from "../ui/PriceCell";
+import { ChangeBadge } from "../ui/ChangeBadge";
+import { InstrumentLabel } from "../ui/InstrumentLabel";
+import { PANELS } from "../layout/panels";
+
+/**
+ * The one value in the header that moves with the stream.
+ *
+ * Isolated so a 2Hz price tick reconciles a single badge rather than the whole
+ * chart section — the canvas below is driven by a store subscription and has
+ * no reason to be re-rendered at all.
+ */
+const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
+  const dailyChange = usePriceStore((s) => s.prices[ticker]?.dailyChangePercent ?? 0);
+  return <ChangeBadge value={dailyChange} pill />;
+});
 
 /**
  * The detailed price chart for the selected ticker.
@@ -16,38 +33,54 @@ import { colors } from "@/lib/theme";
  */
 export function MainChart({ ticker }: { ticker: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !ticker) return;
 
+    // Canvas font strings cannot resolve a CSS custom property, so the
+    // generated family name is read off the document once per mount.
+    const bodyFont =
+      getComputedStyle(document.documentElement).getPropertyValue("--font-body").trim() ||
+      "system-ui";
+
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: colors.bgAlt },
+        background: { type: ColorType.Solid, color: colors.surface },
         textColor: colors.textMuted,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontFamily: `${bodyFont}, system-ui, sans-serif`,
       },
       grid: {
-        vertLines: { color: colors.border },
+        // Only the horizontal rules survive: price levels are what a reader
+        // measures against, and the vertical grid was just noise.
+        vertLines: { visible: false },
         horzLines: { color: colors.border },
       },
-      rightPriceScale: { borderColor: colors.border },
-      timeScale: { borderColor: colors.border, timeVisible: true, secondsVisible: true },
+      rightPriceScale: { borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        secondsVisible: true,
+        // The series is keyed by UTC seconds, which the axis would label in
+        // UTC — putting a different clock on this chart than on the portfolio
+        // chart beside it. Both now read the viewer's local time.
+        tickMarkFormatter: formatClockSeconds,
+      },
+      localization: { timeFormatter: formatClockSeconds },
       crosshair: { mode: 0 },
       autoSize: true,
     });
 
+    // The line wears the instrument's own colour, the same one on its chip in
+    // the watchlist — so selecting a ticker recolours the chart to match the
+    // row you clicked, and green stays reserved for "up".
+    const tint = instrumentColor(ticker);
     const series = chart.addAreaSeries({
-      lineColor: colors.accentBlue,
-      topColor: `${colors.accentBlue}55`,
-      bottomColor: `${colors.accentBlue}05`,
+      lineColor: tint,
+      topColor: `${tint}38`,
+      bottomColor: `${tint}00`,
       lineWidth: 2,
-      priceLineColor: colors.accentYellow,
+      priceLineColor: colors.textFaint,
     });
-
-    chartRef.current = chart;
-    seriesRef.current = series;
 
     let cancelled = false;
     let lastTime = 0;
@@ -100,23 +133,34 @@ export function MainChart({ ticker }: { ticker: string | null }) {
       cancelled = true;
       unsubscribe();
       chart.remove();
-      chartRef.current = null;
-      seriesRef.current = null;
     };
   }, [ticker]);
 
-  return (
-    <section className="panel flex min-h-0 flex-1 flex-col" aria-label="Price chart">
-      <header className="panel-title flex items-center justify-between">
-        <span>{ticker ? `${ticker} — price` : "Price"}</span>
-      </header>
-      {ticker ? (
-        <div ref={containerRef} className="min-h-0 flex-1" data-testid="main-chart" />
-      ) : (
-        <p className="flex flex-1 items-center justify-center text-xs text-text-muted">
-          Select a ticker to chart it.
+  const shell = `rise card flex ${PANELS.chart.minH} flex-1 flex-col lg:min-h-0`;
+
+  if (!ticker) {
+    return (
+      <section id={PANELS.chart.id} className={shell} aria-label="Price chart">
+        <header className="card-title">
+          <span>{PANELS.chart.label}</span>
+        </header>
+        <p className="flex flex-1 items-center justify-center text-sm text-text-muted">
+          Pick a symbol from the watchlist to chart it.
         </p>
-      )}
+      </section>
+    );
+  }
+
+  return (
+    <section id={PANELS.chart.id} className={shell} aria-label="Price chart">
+      <header className="card-title">
+        <InstrumentLabel ticker={ticker} />
+        <span className="flex items-center gap-2">
+          <PriceCell ticker={ticker} className="text-base" testId={`chart-price-${ticker}`} />
+          <LiveChange ticker={ticker} />
+        </span>
+      </header>
+      <div ref={containerRef} className="min-h-0 flex-1 px-1 pb-1" data-testid="main-chart" />
     </section>
   );
 }
