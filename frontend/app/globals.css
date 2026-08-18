@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+/* Every figure in the app is lining and tabular, so a price changing from
+   $190.11 to $190.98 does not shift the column. Stated once, for the whole
+   page, rather than as a class each new number has to remember. */
+body {
+  background-color: theme("colors.bg");
+  color: theme("colors.text");
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Form controls do not inherit it on their own. */
+input,
+select,
+textarea {
+  font-variant-numeric: inherit;
+}
+
+/* Price flash.
+   The animation is restarted by remounting the node with a new key rather
+   than by toggling a class from a timer, so no extra render or cleanup is
+   needed. On a light surface the tint has to be the wash, not the full
+   colour, or the digits disappear into it. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes flash-up {
+    0% {
+      background-color: color-mix(in srgb, theme("colors.up") 16%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  @keyframes flash-down {
+    0% {
+      background-color: color-mix(in srgb, theme("colors.down") 14%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  .flash-up {
+    animation: flash-up 500ms ease-out;
+  }
+  .flash-down {
+    animation: flash-down 500ms ease-out;
+  }
+
+  /* Panels arrive in reading order on load: rail, then value bar, then the
+     workspace left to right. One orchestrated moment, then the page is
+     still. */
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .rise {
+    animation: rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+.card {
+  @apply rounded-card border border-border bg-surface shadow-card;
+}
+
+.card-title {
+  @apply flex items-center justify-between px-4 pb-2 pt-3.5 font-display text-[13px] font-bold tracking-tight text-text;
+}
+
+/* The small caps label above a value or an input. */
+.field-label {
+  @apply font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted;
+}
+
+.field {
+  @apply rounded-xl border border-border bg-surface-alt px-3 py-2 text-sm text-text
+         placeholder:text-text-faint focus:border-brand focus:bg-surface
+         focus:outline-none focus:ring-4 focus:ring-brand/15;
+}
+
+/* Keyboard focus stays visible everywhere, including on the pill buttons
+   whose own ring is suppressed by the border radius. */
+:focus-visible {
+  outline: 2px solid theme("colors.blue");
+  outline-offset: 2px;
+}
+
+/* Scrollbars recede into the card rather than framing it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme("colors.border-strong") transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: theme("colors.border-strong");
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: theme("colors.flat");
+}

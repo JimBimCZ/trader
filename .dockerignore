@@ -1,0 +1,38 @@
+# VCS
+.git
+.gitignore
+.github
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/htmlcov
+**/.coverage
+
+# Node
+**/node_modules
+**/.next
+**/out
+**/.turbo
+
+# Runtime data — never bake a database into the image
+db/
+test/test-results
+test/playwright-report
+
+# Local env and docs
+.env
+.env.*
+!.env.example
+planning/
+*.md
+!README.md
+
+# Editor/OS noise
+.DS_Store
+.vscode
+.idea
+.claude

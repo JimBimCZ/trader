@@ -1,0 +1,38 @@
+# The app under test, configured for determinism.
+#
+# Playwright runs on the host (or the CI runner) rather than in a second
+# container, which keeps browser dependencies out of the production image.
+services:
+  trader:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: trader:test
+    container_name: trader-e2e
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Deterministic responses, no API key needed, no network calls.
+      LLM_MOCK: "true"
+      # A fixed seed makes price assertions reproducible.
+      SIM_SEED: "1234"
+      SIM_TICK_MS: "250"
+      # Realistic volatility moves sub-cent per tick, which makes any
+      # assertion about visible price movement slow and marginal.
+      SIM_VOL_MULTIPLIER: "50"
+      OPENROUTER_API_KEY: "not-used-in-mock-mode"
+    tmpfs:
+      # A throwaway database per run, so tests never inherit prior state.
+      - /app/db
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status == 200 else 1)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s

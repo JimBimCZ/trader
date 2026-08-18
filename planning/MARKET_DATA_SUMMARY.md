@@ -25,7 +25,7 @@ MarketDataSource (ABC)
 
 | File | Purpose |
 |------|---------|
-| `models.py` | `PriceUpdate` — immutable frozen dataclass (ticker, price, previous_price, timestamp, change, direction) |
+| `models.py` | `PriceUpdate` — immutable frozen dataclass (ticker, price, previous_price, timestamp, session_open, change, change_percent, daily_change, daily_change_percent, direction) |
 | `interface.py` | `MarketDataSource` — abstract base class defining `start/stop/add_ticker/remove_ticker/get_tickers` |
 | `cache.py` | `PriceCache` — thread-safe price store with version counter for SSE change detection |
 | `seed_prices.py` | Realistic seed prices, per-ticker GBM params (drift/volatility), correlation groups |
@@ -102,3 +102,28 @@ await source.remove_ticker("GOOGL")
 # Shutdown
 await source.stop()
 ```
+
+
+---
+
+## Amendments (2026-08-18)
+
+Made while building the rest of the platform. See `planning/DECISIONS.md` for rationale.
+
+- **`session_open` added to `PriceUpdate`**, with `daily_change` / `daily_change_percent`
+  properties. `change_percent` is tick-over-tick and sits near zero; it is *not* the daily change
+  the UI displays. The simulator pins its seed price as the baseline.
+- **`SimulatorDataSource` now derives `dt` from `update_interval`.** It previously ignored the
+  interval and used a hardcoded 500ms constant, so lowering the tick rate silently rescaled
+  realized volatility.
+- **Tickers are canonicalized in both sources** via `app/market/tickers.py`. The simulator
+  previously did not, so `add_ticker("aapl")` created a second instrument alongside `AAPL`.
+- **`create_stream_router()` builds its own `APIRouter`.** It previously decorated a module-level
+  one, so a second call registered duplicate routes and the first closure's cache won.
+- **`SimulatorDataSource` accepts a `seed`** and uses instance-owned RNGs, making price paths
+  reproducible for E2E.
+- **The SSE stream sends a keepalive comment frame** after 15s of quiet.
+- Usage note omitted from the original summary: the SSE endpoint must be wired up with
+  `app.include_router(create_stream_router(cache))`.
+
+Test count is now 112 for this module (was 73).

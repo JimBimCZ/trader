@@ -4,7 +4,7 @@
 
 ## 1. Vision
 
-Trader is a visually stunning AI-powered trading workstation that streams live market data, lets users trade a simulated portfolio, and integrates an LLM chat assistant that can analyze positions and execute trades on the user's behalf. It looks and feels like a modern Bloomberg terminal with an AI copilot.
+Trader is a visually stunning AI-powered trading workstation that streams live market data, lets users trade a simulated portfolio, and integrates an LLM chat assistant that can analyze positions and execute trades on the user's behalf. It looks and feels like a modern consumer trading app — the eToro register: light, friendly, and instantly legible — with an AI copilot.
 
 This is the capstone project for an agentic AI coding course. It is built entirely by Coding Agents demonstrating how orchestrated AI agents can produce a production-quality full-stack application. Agents interact through files in `planning/`.
 
@@ -16,7 +16,7 @@ The user runs a single Docker command (or a provided start script). A browser op
 
 - A watchlist of 10 default tickers with live-updating prices in a grid
 - $10,000 in virtual cash
-- A dark, data-rich trading terminal aesthetic
+- A light, card-based trading aesthetic in the eToro register
 - An AI chat panel ready to assist
 
 ### What the User Can Do
@@ -32,16 +32,73 @@ The user runs a single Docker command (or a provided start script). A browser op
 
 ### Visual Design
 
-- **Dark theme**: backgrounds around `#0d1117` or `#1a1a2e`, muted gray borders, no pure black
-- **Price flash animations**: brief green/red background highlight on price change, fading over ~500ms via CSS transitions
-- **Connection status indicator**: a small colored dot (green = connected, yellow = reconnecting, red = disconnected) visible in the header
-- **Professional, data-dense layout**: inspired by Bloomberg/trading terminals — every pixel earns its place
-- **Responsive but desktop-first**: optimized for wide screens, functional on tablet
+*Revised 2026-08-18: this section and §10 were rewritten to match the eToro redesign, replacing
+the original dark Bloomberg-terminal direction.*
+
+Modelled on the eToro trading app: a light, consumer-grade surface rather than a dark
+terminal. The density of a professional tool is kept; the intimidation is not.
+
+- **Light theme**: a cool canvas (`#F2F5F7`) with white cards floating on it. The contrast
+  between canvas and card is what gives the layout its structure, so the canvas is never
+  white itself and the cards never carry a heavy border.
+- **Rounded cards**: 16px radius, hairline border, very soft shadow. Pill-shaped buttons.
+- **Green is the load-bearing colour**: it is *up*, it is *buy*, and it is the only fill on
+  a primary action. Nothing else competes with it.
+- **Price flash animations**: brief green/red background tint on price change, fading over
+  ~500ms via CSS animation. On a light surface the tint is a shimmer, not a badge — at a
+  500ms tick rate almost every row is mid-animation at any moment.
+- **Connection status indicator**: a small colored dot *paired with a text label* (Live /
+  Connecting / Reconnecting / Disconnected), visible in the header.
+- **Data-dense but calm layout**: every pixel earns its place, but whitespace is allowed to
+  do work.
+- **Responsive but desktop-first**: optimized for wide screens, functional on tablet and
+  usable on a phone.
 
 ### Color Scheme
-- Accent Yellow: `#ecad0a`
-- Blue Primary: `#209dd7`
-- Purple Secondary: `#753991` (submit buttons)
+
+Defined once in `frontend/lib/theme.ts`, which both the Tailwind config and the canvas
+charting code import — a colour can never drift between the two. Every colour used for text
+is contrast-checked against the surface it sits on.
+
+**Surfaces**
+- Canvas: `#F2F5F7` · Card: `#FFFFFF` · Sunk: `#EDF1F4` · Border: `#E2E9EE`
+- Navigation rail: `#0E2029` (deep petrol)
+
+**Ink**
+- Primary: `#0E2635` · Muted: `#63808F` · Faint: `#93A8B4`
+
+**Brand and direction**
+- Brand green (up / buy / primary CTA): `#13C636`, hover `#0B9E29`, wash `#E8FAEC`
+- Down / sell: `#F0435C`, text-safe `#C41F37`, wash `#FDECEE`
+- Up text-safe: `#0A7C22` — small coloured text uses the darkened variant so it clears 4.5:1
+- Flat / neutral: `#8FA5B1`
+
+**Retained accents** (carried over from the original terminal palette)
+- Accent Yellow: `#ecad0a` — connecting / reconnecting states. Carries the same
+  wash/text-safe pair as up and down (`#FDF3DC` / `#8A6206`), so the caution state is
+  built from tokens rather than a tint mixed in the component, and its small text clears
+  4.5:1 like every other coloured label
+- Blue Primary: `#209dd7` — keyboard focus ring
+- Purple Secondary: `#753991` — **defined but no longer used.** It was the submit-button fill;
+  against the green/coral direction system it now reads as a third, competing signal, so the
+  Send action uses primary ink instead. The token is kept so the choice can be revisited.
+
+**Instrument identity colours.** eToro leans on a logo per instrument; with no logo assets,
+each symbol earns a stable colour instead, hashed from the symbol itself
+(`instrumentColor()`). The ten hues sit at a similar lightness so a full watchlist reads as
+one palette rather than confetti, and every one clears 4.5:1 against white monogram text.
+The same colour follows a holding through the watchlist chip, the positions table, the
+header's allocation bar, and the main chart's line.
+
+### Typography
+
+- **Display** — Figtree (600/700): brand, section titles, ticker symbols, buttons.
+- **Body and all numerals** — Inter (400–700). Every figure in the app is lining and
+  tabular, so a price moving from `$190.11` to `$190.98` does not shift its column.
+- **No monospace anywhere.** Both faces are pulled by `next/font/google` and self-hosted
+  into the static export, so the container never reaches a font CDN at runtime. This does
+  mean the frontend build needs network access to fetch them — the same requirement
+  `npm ci` already imposes.
 
 ## 3. Architecture Overview
 
@@ -350,24 +407,82 @@ When `LLM_MOCK=true`, the backend returns deterministic mock responses instead o
 
 ### Layout
 
-The frontend is a single-page application with a dense, terminal-inspired layout. The specific component architecture and layout system is up to the Frontend Engineer, but the UI should include these elements:
+The frontend is a single-page application shaped like a real trading platform: a fixed
+navigation rail, a value-bar header, and a three-column workspace where each panel owns its
+own scroll region. The page itself does not scroll on a wide screen.
 
-- **Watchlist panel** — grid/table of watched tickers with: ticker symbol, current price (flashing green/red on change), daily change %, and a sparkline mini-chart (accumulated from SSE since page load)
-- **Main chart area** — larger chart for the currently selected ticker, with at minimum price over time. Clicking a ticker in the watchlist selects it here.
-- **Portfolio heatmap** — treemap visualization where each rectangle is a position, sized by portfolio weight, colored by P&L (green = profit, red = loss)
-- **P&L chart** — line chart showing total portfolio value over time, using data from `portfolio_snapshots`
-- **Positions table** — tabular view of all positions: ticker, quantity, avg cost, current price, unrealized P&L, % change
-- **Trade bar** — simple input area: ticker field, quantity field, buy button, sell button. Market orders, instant fill.
-- **AI chat panel** — docked/collapsible sidebar. Message input, scrolling conversation history, loading indicator while waiting for LLM response. Trade executions and watchlist changes shown inline as confirmations.
-- **Header** — portfolio total value (updating live), connection status indicator, cash balance
+```
+┌────┬──────────────────────────────────────────────────┐
+│    │  PORTFOLIO VALUE   ALLOCATION           ● Live   │
+│ R  │  $10,091.25  ▲ +$91.25   [██|██|██|░░]  cash     │
+│ A  ├───────────┬──────────────────────┬───────────────┤
+│ I  │ Watchlist │  Main chart          │  Assistant    │
+│ L  │  ⬤ AAPL   │                      │               │
+│    │  ⬤ NVDA   ├──────────────────────┤               │
+│    │  ⬤ MSFT   │  Trade ticket        │               │
+│    │           ├───────────┬──────────┤               │
+│    │           │ Allocation│ Perform. │               │
+│    │           ├───────────┴──────────┤               │
+│    │           │  Positions           │               │
+└────┴───────────┴──────────────────────┴───────────────┘
+```
+
+Below the `lg` breakpoint this inverts: panels take their natural height and the page
+scrolls as a whole, because a fixed viewport split four ways leaves every panel too short
+to read.
+
+The specific component architecture is up to the Frontend Engineer, but the UI should
+include these elements:
+
+- **Navigation rail** — fixed, dark, icon-led. Carries the brand mark and one entry per
+  workspace panel. Each entry shows that panel's live count (watchlist size, selected
+  ticker, open positions) and scrolls it into view on the narrow layouts, so the rail is
+  informative rather than decorative on wide screens where everything is already visible.
+- **Header value bar** — portfolio total value as the largest number on the page (updating
+  live), unrealized P&L in currency and percent, cash balance, connection status, and a
+  **segmented allocation bar**: one segment per holding, width by weight, each wearing that
+  instrument's identity colour.
+- **Watchlist panel** — one row per ticker: identity chip, symbol, company name, sparkline,
+  live price (flashing green/red on change), and daily change % in a tinted pill. Selection
+  is marked by a green edge marker, not colour alone.
+- **Main chart area** — larger chart for the currently selected ticker, price over time,
+  headed by the instrument's chip, name, live price and change pill. The line takes the
+  instrument's identity colour, so selecting a ticker recolours the chart to match the row
+  that was clicked — and green stays reserved for "up".
+- **Allocation & P&L heatmap** — treemap where each rectangle is a position, sized by
+  portfolio weight, shaded by return (green = profit, red = loss). A cell prints its ticker
+  and weight, adding the signed return once it is tall enough — on a freshly opened
+  portfolio every return is ~0% and the weight is the number actually worth reading.
+- **Performance chart** — area chart of total portfolio value over time, from
+  `portfolio_snapshots`, headed by the session change.
+- **Positions table** — ticker (with chip and company name), quantity, avg cost, current
+  price, unrealized P&L, % change.
+- **Trade ticket** — labelled symbol field, units field, live order value, and pill-shaped
+  Sell / Buy actions. Market orders, instant fill.
+- **AI chat panel** — docked/collapsible sidebar with an avatar, rounded message bubbles,
+  suggested opening prompts, and a loading indicator while waiting for the LLM. Trade
+  executions and watchlist changes appear inline as receipts, carrying the instrument's
+  chip and named in the tense that is true — a filled order reads "Bought 10 AAPL", a
+  rejected one reads "Buy 10 AAPL".
 
 ### Technical Notes
 
 - Use `EventSource` for SSE connection to `/api/stream/prices`
 - Canvas-based charting library preferred (Lightweight Charts or Recharts) for performance
-- Price flash effect: on receiving a new price, briefly apply a CSS class with background color transition, then remove it
+- Price flash effect: derive the flash class during the render the price change already
+  causes, and restart the CSS animation by remounting the node with a new key — no timer, no
+  extra state, and no second render to clear the highlight
 - All API calls go to the same origin (`/api/*`) — no CORS configuration needed
-- Tailwind CSS for styling with a custom dark theme
+- Tailwind CSS for styling, with the token set of §2 defined once in `lib/theme.ts` and
+  imported by both the Tailwind config and the chart code
+- Canvas font strings cannot resolve a CSS custom property, so charts read the generated
+  font family off the document at mount
+- Charts render timestamps in the viewer's local time; the series is keyed by UTC seconds,
+  and an axis left on its default would put a different clock on one chart than on the one
+  beside it
+- Accessibility floor: colour is never the only encoding — every coloured number carries a
+  sign and an arrow glyph; keyboard focus stays visible; `prefers-reduced-motion` suppresses
+  the flash and the page-load reveal
 
 ---
 
@@ -438,7 +553,10 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 - Price flash animation triggers correctly on price changes
 - Watchlist CRUD operations
 - Portfolio display calculations
-- Chat message rendering and loading state
+- Chat message rendering and loading state, including that a rejected action is named in the
+  tense that is true rather than reported as done
+- Every coloured value carries its sign and arrow glyph, so meaning survives without colour
+- The heatmap's colour scale, tested directly rather than through the charting library
 
 ### E2E Tests (in `test/`)
 
@@ -458,6 +576,17 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 ---
 
 ## 13. Review Questions, Clarifications & Simplifications
+
+> **Status: resolved.** Every item below was answered during the build. The answers, with
+> rationale, are in **`planning/DECISIONS.md`**, which is authoritative wherever it disagrees with
+> this document. The wire format those decisions produced is frozen in
+> **`planning/API_CONTRACT.md`**. This section is kept for provenance — read it to understand why
+> a decision was made, not to decide anything.
+>
+> **One exception.** The *visual* answers here and in `DECISIONS.md` (notably D-48) predate the
+> 2026-08-18 eToro redesign and still describe the dark `#0d1117` theme — see item #15 below.
+> §2 and §10 of this document supersede them on colour, typography, and layout. Everything
+> non-visual in §13 and `DECISIONS.md` still stands.
 
 Added 2026-08-17 by a documentation review pass. This section is advisory — it raises gaps that
 two agents working in parallel (backend vs. frontend) would otherwise resolve differently. Items

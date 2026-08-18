@@ -1,6 +1,8 @@
 """Tests for GBMSimulator."""
 
-from app.market.seed_prices import SEED_PRICES
+import pytest
+
+from app.market.seed_prices import SEED_PRICES, TICKER_PARAMS
 from app.market.simulator import GBMSimulator
 
 
@@ -126,6 +128,57 @@ class TestGBMSimulator:
         result = sim.step()
         price_str = str(result["AAPL"])
         # Check that we have at most 2 decimal places
-        if '.' in price_str:
-            decimal_part = price_str.split('.')[1]
+        if "." in price_str:
+            decimal_part = price_str.split(".")[1]
             assert len(decimal_part) <= 2
+
+
+class TestVolatilityMultiplier:
+    """The knob that makes demo prices move without distorting the model."""
+
+    def test_defaults_to_no_change(self):
+        """An unset multiplier reproduces the original price path exactly."""
+        baseline = GBMSimulator(tickers=["AAPL"], seed=99)
+        explicit = GBMSimulator(tickers=["AAPL"], seed=99, vol_multiplier=1.0)
+
+        for _ in range(20):
+            assert baseline.step() == explicit.step()
+
+    def test_amplifies_price_movement(self):
+        """A higher multiplier produces visibly larger moves from one seed."""
+        calm = GBMSimulator(tickers=["AAPL"], seed=7, event_probability=0.0)
+        wild = GBMSimulator(tickers=["AAPL"], seed=7, event_probability=0.0, vol_multiplier=25.0)
+
+        start = calm.get_price("AAPL")
+        for _ in range(200):
+            calm.step()
+            wild.step()
+
+        calm_move = abs(calm.get_price("AAPL") - start)
+        wild_move = abs(wild.get_price("AAPL") - start)
+        assert wild_move > calm_move * 5
+
+    def test_leaves_the_seed_parameters_untouched(self):
+        """The multiplier is applied at step time, not baked into the params.
+
+        Keeping the stored sigma as the documented per-ticker volatility means
+        the seed data still means what seed_prices.py says it means.
+        """
+        sim = GBMSimulator(tickers=["AAPL"], seed=1, vol_multiplier=10.0)
+        assert sim._params["AAPL"]["sigma"] == TICKER_PARAMS["AAPL"]["sigma"]
+
+    def test_zero_multiplier_removes_diffusion(self):
+        """A multiplier of zero leaves only drift, which is a useful test mode."""
+        sim = GBMSimulator(tickers=["AAPL"], seed=3, event_probability=0.0, vol_multiplier=0.0)
+        start = sim.get_price("AAPL")
+        for _ in range(50):
+            sim.step()
+        # Drift over 50 half-second ticks is far below a cent.
+        assert sim.get_price("AAPL") == pytest.approx(start, abs=0.01)
+
+    def test_still_deterministic_under_a_seed(self):
+        """Amplified runs remain reproducible."""
+        first = GBMSimulator(tickers=["AAPL", "MSFT"], seed=42, vol_multiplier=8.0)
+        second = GBMSimulator(tickers=["AAPL", "MSFT"], seed=42, vol_multiplier=8.0)
+        for _ in range(30):
+            assert first.step() == second.step()
