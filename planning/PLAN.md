@@ -459,6 +459,12 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 
 ## 13. Review Questions, Clarifications & Simplifications
 
+> **Status: resolved.** Every item below was answered during the build. The answers, with
+> rationale, are in **`planning/DECISIONS.md`**, which is authoritative wherever it disagrees with
+> this document. The wire format those decisions produced is frozen in
+> **`planning/API_CONTRACT.md`**. This section is kept for provenance — read it to understand why
+> a decision was made, not to decide anything.
+
 Added 2026-08-17 by a documentation review pass. This section is advisory — it raises gaps that
 two agents working in parallel (backend vs. frontend) would otherwise resolve differently. Items
 marked **[decide]** need an answer before the relevant component is built; items marked

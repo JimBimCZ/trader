@@ -1,0 +1,18 @@
+services:
+  trader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trader:latest
+    container_name: trader
+    ports:
+      # Bound to localhost only: the app has no authentication and executes
+      # trades without confirmation, so it must not be reachable on the LAN.
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # A bind mount rather than a named volume, so the database is visible
+      # and deletable from the host.
+      - ./db:/app/db
+    restart: unless-stopped

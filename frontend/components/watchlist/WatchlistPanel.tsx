@@ -57,7 +57,11 @@ export function WatchlistPanel() {
       </form>
 
       {error && (
-        <p role="alert" className="border-t border-border px-3 py-2 text-xs text-down-text">
+        <p
+          role="alert"
+          data-testid="watchlist-error"
+          className="border-t border-border px-3 py-2 text-xs text-down-text"
+        >
           {error}
         </p>
       )}

@@ -22,6 +22,17 @@ PORTFOLIO_RE = re.compile(r"\b(portfolio|position|holding)", re.IGNORECASE)
 ERROR_TRIGGER = "__mock_error__"
 
 
+def _summarize(context: str) -> str:
+    """Pull the headline figures out of the context block.
+
+    Echoing the whole block would put internal prompt text in front of the
+    user, so only the lines meant to be read are quoted.
+    """
+    wanted = ("Cash:", "Total value:", "Unrealized P&L:", "POSITIONS", "WATCHLIST", "- ")
+    lines = [line for line in context.splitlines() if line.startswith(wanted)]
+    return "\n".join(lines) if lines else "Your portfolio is ready."
+
+
 class MockChatClient(ChatClient):
     """Keys off the user's message text. No network, fully reproducible."""
 
@@ -29,7 +40,9 @@ class MockChatClient(ChatClient):
         user_message = next(
             (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
         )
-        context = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        # The last system message is the portfolio context block; the first
+        # is the system prompt, which must never be echoed to the user.
+        context = next((m["content"] for m in reversed(messages) if m.get("role") == "system"), "")
 
         if ERROR_TRIGGER in user_message:
             raise LLMError("Mock failure triggered.")
@@ -58,10 +71,10 @@ class MockChatClient(ChatClient):
             )
 
         if PORTFOLIO_RE.search(user_message):
+            summary = _summarize(context)
             return ChatCompletionSchema(
                 message=(
-                    "Here is where your portfolio stands.\n\n"
-                    f"{context}\n\n"
+                    f"{summary}\n\n"
                     "Concentration is the thing to watch: a single position above roughly "
                     "20% of total value is where one bad day starts to hurt."
                 )

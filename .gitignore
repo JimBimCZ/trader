@@ -207,8 +207,10 @@ marimo/_lsp/
 __marimo__/
 
 # GitHub Actions
-#   Inherited workflows kept locally until their secrets are configured.
-.github/workflows/
+#   The inherited Claude workflows stay local until their secrets are
+#   configured; ci.yml needs no secrets and is tracked.
+.github/workflows/claude.yml
+.github/workflows/claude-code-review.yml
 
 # --- Node / Next.js (frontend) ---
 node_modules/
@@ -233,3 +235,6 @@ test/.cache/
 db/*.db
 db/*.db-wal
 db/*.db-shm
+
+# --- Playwright / E2E artifacts ---
+test/node_modules/

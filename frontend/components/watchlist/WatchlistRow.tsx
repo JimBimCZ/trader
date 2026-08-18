@@ -23,6 +23,7 @@ export function WatchlistRow({ ticker }: { ticker: string }) {
         onClick={() => select(ticker)}
         className="flex items-center gap-2 text-left font-semibold tracking-wider text-text"
         aria-pressed={selected}
+        data-testid={`select-${ticker}`}
       >
         {ticker}
       </button>
