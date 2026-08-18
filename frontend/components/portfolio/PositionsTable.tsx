@@ -19,7 +19,7 @@ export function PositionsTable() {
   return (
     <section
       id={PANELS.portfolio.id}
-      className="rise card flex flex-col lg:min-h-0"
+      className="rise card flex flex-col overflow-hidden lg:min-h-0"
       aria-label="Positions"
     >
       <header className="card-title">
@@ -34,9 +34,9 @@ export function PositionsTable() {
           No open positions. Buy a symbol to start building the portfolio.
         </p>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+        <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full text-[13px]" data-testid="positions-table">
-            <thead className="sticky top-0 bg-surface font-display text-[11px] font-bold uppercase tracking-[0.1em] text-text-muted">
+            <thead className="sticky top-0 bg-surface text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
               <tr>
                 <th className="px-3 pb-2 pt-1 text-left">Instrument</th>
                 <th className="px-3 pb-2 pt-1 text-right">Units</th>
@@ -55,7 +55,7 @@ export function PositionsTable() {
                   <tr
                     key={position.ticker}
                     onClick={() => select(position.ticker)}
-                    className="cursor-pointer border-t border-border transition hover:bg-surface-alt"
+                    className="cursor-pointer border-t-hairline border-border transition hover:bg-blue/[0.06]"
                     data-testid={`position-${position.ticker}`}
                   >
                     <td className="px-3 py-2">
@@ -64,7 +64,7 @@ export function PositionsTable() {
                         {unwatched && (
                           <span
                             title="Held but not on your watchlist"
-                            className="rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-semibold text-text-muted"
+                            className="rounded-full bg-surface-sunk px-2 py-0.5 text-[10px] font-medium text-text-muted"
                           >
                             unwatched
                           </span>

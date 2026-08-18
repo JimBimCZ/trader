@@ -37,11 +37,14 @@ export function ChatMessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"} data-testid={`chat-${message.role}`}>
+      {/* Messages, the way the platform draws them: the sender's bubble is
+          filled with the interaction colour, the reply takes the neutral
+          fill, and the corner nearest the speaker tightens into a tail. */}
       <div
-        className={`max-w-[92%] whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-relaxed ${
+        className={`max-w-[92%] whitespace-pre-wrap px-3.5 py-2 text-[13px] leading-[1.45] ${
           isUser
-            ? "rounded-2xl rounded-br-md bg-text text-white"
-            : "rounded-2xl rounded-bl-md bg-surface-sunk text-text"
+            ? "rounded-[18px] rounded-br-[5px] bg-blue-fill text-white"
+            : "rounded-[18px] rounded-bl-[5px] bg-surface-sunk text-text"
         }`}
       >
         {message.content}
@@ -54,7 +57,7 @@ export function ChatMessageBubble({ message }: { message: ChatMessage }) {
           {message.actions.map((action, index) => (
             <li
               key={index}
-              className={`flex items-start gap-2 rounded-xl px-2.5 py-2 text-[12px] ${
+              className={`flex items-start gap-2 rounded-control px-2.5 py-2 text-[12px] ${
                 action.status === "ok" ? "bg-up-wash text-up-text" : "bg-down-wash text-down-text"
               }`}
             >

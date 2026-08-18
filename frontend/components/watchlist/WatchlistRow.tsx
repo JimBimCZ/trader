@@ -8,6 +8,14 @@ import { Sparkline } from "../ui/Sparkline";
 import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { CloseIcon } from "../ui/icons";
 
+/**
+ * One row of the grouped inset list.
+ *
+ * Selection is a blue tint rather than an edge marker: blue is the app's
+ * interaction colour now, so the row that is current can say so in the same
+ * language as every other selected thing. The `data-selected` attribute is
+ * what tells the separator above it to step aside.
+ */
 export function WatchlistRow({ ticker }: { ticker: string }) {
   const selected = useWatchlistStore((s) => s.selectedTicker === ticker);
   const select = useWatchlistStore((s) => s.select);
@@ -16,18 +24,14 @@ export function WatchlistRow({ ticker }: { ticker: string }) {
 
   return (
     <div
-      className={`group relative flex items-center gap-3 rounded-xl px-2.5 py-2 transition ${
-        selected ? "bg-surface-sunk" : "hover:bg-surface-alt"
+      data-selected={selected}
+      // The separator starts where the symbol does, past the chip.
+      style={{ "--row-inset": "3.25rem" } as React.CSSProperties}
+      className={`list-row group flex items-center gap-3 px-3 py-2 transition ${
+        selected ? "bg-blue/10" : "hover:bg-surface-alt"
       }`}
       data-testid={`watchlist-row-${ticker}`}
     >
-      {selected && (
-        <span
-          aria-hidden="true"
-          className="absolute left-0 top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-brand"
-        />
-      )}
-
       <button
         onClick={() => select(ticker)}
         className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
@@ -41,7 +45,7 @@ export function WatchlistRow({ ticker }: { ticker: string }) {
         <Sparkline ticker={ticker} />
       </span>
 
-      <div className="flex w-[84px] shrink-0 flex-col items-end gap-0.5">
+      <div className="flex w-[80px] shrink-0 flex-col items-end gap-0.5">
         <PriceCell ticker={ticker} className="text-[13px]" />
         <ChangeBadge value={dailyChange} testId={`change-${ticker}`} />
       </div>
@@ -52,9 +56,9 @@ export function WatchlistRow({ ticker }: { ticker: string }) {
         onClick={() => remove(ticker)}
         aria-label={`Remove ${ticker} from watchlist`}
         data-testid={`remove-${ticker}`}
-        className="absolute -right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-surface text-text-faint opacity-0 shadow-card transition hover:bg-down-wash hover:text-down-text group-hover:opacity-100 focus:opacity-100"
+        className="absolute right-1.5 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-text-faint opacity-0 shadow-card transition hover:bg-down hover:text-white group-hover:opacity-100 focus:opacity-100"
       >
-        <CloseIcon />
+        <CloseIcon className="h-3 w-3" />
       </button>
     </div>
   );

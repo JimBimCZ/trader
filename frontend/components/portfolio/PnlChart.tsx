@@ -10,7 +10,8 @@ import {
   YAxis,
 } from "recharts";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
-import { colors, shadows } from "@/lib/theme";
+import { usePalette } from "@/lib/useTheme";
+import { radii } from "@/lib/theme";
 import { formatCompact, formatIsoClock, formatPrice } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
 import { CHART_MIN_H } from "../layout/panels";
@@ -30,6 +31,7 @@ function axisFormatter(range: number) {
  * canvas — there is no update-rate problem to solve here.
  */
 export function PnlChart() {
+  const { colors, shadows } = usePalette();
   const history = usePortfolioStore((s) => s.history);
   const refreshHistory = usePortfolioStore((s) => s.refreshHistory);
 
@@ -98,7 +100,7 @@ export function PnlChart() {
                 contentStyle={{
                   background: colors.surface,
                   border: `1px solid ${colors.border}`,
-                  borderRadius: 12,
+                  borderRadius: parseInt(radii.control, 10),
                   boxShadow: shadows.pop,
                   fontSize: 12,
                 }}

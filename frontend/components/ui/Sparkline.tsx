@@ -2,7 +2,7 @@
 
 import { useId, useMemo } from "react";
 import { usePriceStore } from "@/lib/stream/priceStore";
-import { colors } from "@/lib/theme";
+import { usePalette } from "@/lib/useTheme";
 
 /**
  * A hand-drawn SVG area.
@@ -17,6 +17,7 @@ const HEIGHT = 26;
 
 export function Sparkline({ ticker }: { ticker: string }) {
   const points = usePriceStore((state) => state.sparklines[ticker]);
+  const { colors } = usePalette();
   const gradientId = useId();
 
   const line = useMemo(() => {
@@ -57,7 +58,7 @@ export function Sparkline({ ticker }: { ticker: string }) {
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity={0.28} />
+          <stop offset="0%" stopColor={stroke} stopOpacity={0.3} />
           <stop offset="100%" stopColor={stroke} stopOpacity={0} />
         </linearGradient>
       </defs>

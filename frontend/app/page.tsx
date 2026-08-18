@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { usePriceStream } from "@/lib/stream/usePriceStream";
+import { useTheme } from "@/lib/useTheme";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { useChatStore } from "@/store/useChatStore";
@@ -31,6 +32,13 @@ const PortfolioHeatmap = dynamic(
 
 export default function Page() {
   usePriceStream();
+
+  // Adopts the appearance the pre-paint script already resolved, and starts
+  // following the system setting. It runs after mount rather than during
+  // render because the page is prerendered: deciding this any earlier would
+  // make the client's first render disagree with the exported HTML.
+  const hydrateTheme = useTheme((s) => s.hydrate);
+  useEffect(hydrateTheme, [hydrateTheme]);
 
   const selectedTicker = useWatchlistStore((s) => s.selectedTicker);
   const refreshWatchlist = useWatchlistStore((s) => s.refresh);

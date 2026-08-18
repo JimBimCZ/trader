@@ -15,7 +15,7 @@ const PROMPTS = ["How is my portfolio doing?", "Buy 10 AAPL", "What should I tri
 function AiAvatar({ className = "h-7 w-7" }: { className?: string }) {
   return (
     <span
-      className={`flex items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white ${className}`}
+      className={`flex items-center justify-center rounded-full bg-blue-fill text-[11px] font-semibold text-white ${className}`}
     >
       AI
     </span>
@@ -50,7 +50,7 @@ export function ChatPanel() {
     return (
       <button
         onClick={() => setCollapsed(false)}
-        className="card flex items-center gap-2 px-4 py-3 font-display text-[13px] font-bold tracking-tight text-text hover:bg-surface-alt"
+        className="card flex items-center gap-2 px-4 py-3 text-[13px] font-semibold tracking-[-0.01em] text-text transition hover:bg-surface-alt"
         data-testid="chat-expand"
       >
         <AiAvatar className="h-6 w-6" />
@@ -62,7 +62,7 @@ export function ChatPanel() {
   return (
     <section
       id={PANELS.assistant.id}
-      className="rise card flex min-h-[340px] flex-1 flex-col lg:min-h-0"
+      className="rise card flex min-h-[340px] flex-1 flex-col overflow-hidden lg:min-h-0"
       aria-label="AI assistant"
     >
       <header className="card-title">
@@ -70,14 +70,14 @@ export function ChatPanel() {
           <AiAvatar />
           <span>
             <span className="block">Assistant</span>
-            <span className="block font-sans text-[11px] font-normal text-text-muted">
+            <span className="block text-[11px] font-normal text-text-muted">
               Trades on your say-so
             </span>
           </span>
         </span>
         <button
           onClick={() => setCollapsed(true)}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-text-faint transition hover:bg-surface-sunk hover:text-text"
+          className="flex h-6 w-6 items-center justify-center rounded-full text-text-faint transition hover:bg-surface-sunk hover:text-text"
           aria-label="Collapse assistant panel"
           data-testid="chat-collapse"
         >
@@ -88,7 +88,7 @@ export function ChatPanel() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-2" data-testid="chat-messages">
         {messages.length === 0 && (
           <div className="space-y-3 px-1 pt-2">
-            <p className="text-[13px] leading-relaxed text-text-muted">
+            <p className="text-[13px] leading-[1.45] text-text-muted">
               Ask about your positions, or say what to trade and I&apos;ll place the order.
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -96,7 +96,7 @@ export function ChatPanel() {
                 <button
                   key={prompt}
                   onClick={() => dispatch(prompt)}
-                  className="rounded-full bg-surface-sunk px-3 py-1.5 text-[12px] font-medium text-text transition hover:bg-border"
+                  className="rounded-full bg-blue-wash px-3 py-1.5 text-[12px] font-medium text-blue-text transition active:opacity-70"
                 >
                   {prompt}
                 </button>
@@ -109,7 +109,7 @@ export function ChatPanel() {
         ))}
         {isLoading && (
           <p
-            className="w-fit animate-pulse rounded-2xl rounded-bl-md bg-surface-sunk px-3.5 py-2.5 text-[13px] text-text-muted"
+            className="w-fit animate-pulse rounded-[18px] rounded-bl-[5px] bg-surface-sunk px-3.5 py-2 text-[13px] text-text-muted"
             data-testid="chat-loading"
           >
             Thinking…
@@ -123,7 +123,7 @@ export function ChatPanel() {
           event.preventDefault();
           void dispatch(draft.trim());
         }}
-        className="flex gap-2 border-t border-border p-3"
+        className="flex gap-2 border-t-hairline border-border p-3"
       >
         <input
           value={draft}
@@ -133,7 +133,7 @@ export function ChatPanel() {
           data-testid="chat-input"
           className="field min-w-0 flex-1"
         />
-        <Button type="submit" variant="submit" disabled={isLoading} data-testid="chat-send">
+        <Button type="submit" variant="prominent" disabled={isLoading} data-testid="chat-send">
           Send
         </Button>
       </form>

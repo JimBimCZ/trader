@@ -4,7 +4,7 @@
 
 ## 1. Vision
 
-Trader is a visually stunning AI-powered trading workstation that streams live market data, lets users trade a simulated portfolio, and integrates an LLM chat assistant that can analyze positions and execute trades on the user's behalf. It looks and feels like a modern consumer trading app — the eToro register: light, friendly, and instantly legible — with an AI copilot.
+Trader is a visually stunning AI-powered trading workstation that streams live market data, lets users trade a simulated portfolio, and integrates an LLM chat assistant that can analyze positions and execute trades on the user's behalf. It looks and feels like a native Apple app — the macOS/iOS register: system materials, system colours, light and dark as equals — with an AI copilot.
 
 This is the capstone project for an agentic AI coding course. It is built entirely by Coding Agents demonstrating how orchestrated AI agents can produce a production-quality full-stack application. Agents interact through files in `planning/`.
 
@@ -16,7 +16,7 @@ The user runs a single Docker command (or a provided start script). A browser op
 
 - A watchlist of 10 default tickers with live-updating prices in a grid
 - $10,000 in virtual cash
-- A light, card-based trading aesthetic in the eToro register
+- A card-based trading aesthetic in the Apple system register, in whichever appearance their OS is set to
 - An AI chat panel ready to assist
 
 ### What the User Can Do
@@ -32,21 +32,33 @@ The user runs a single Docker command (or a provided start script). A browser op
 
 ### Visual Design
 
-*Revised 2026-08-18: this section and §10 were rewritten to match the eToro redesign, replacing
-the original dark Bloomberg-terminal direction.*
+*Revised 2026-08-18: this section and §10 describe the Apple redesign. They replace the eToro
+direction of the same date, which in turn replaced the original dark Bloomberg-terminal
+direction. Both earlier passes are superseded on colour, typography, layout, and motion.*
 
-Modelled on the eToro trading app: a light, consumer-grade surface rather than a dark
-terminal. The density of a professional tool is kept; the intimidation is not.
+Modelled on macOS and iOS: a system-native surface rather than a branded one. The density of a
+professional tool is kept; the styling defers to the platform.
 
-- **Light theme**: a cool canvas (`#F2F5F7`) with white cards floating on it. The contrast
-  between canvas and card is what gives the layout its structure, so the canvas is never
-  white itself and the cards never carry a heavy border.
-- **Rounded cards**: 16px radius, hairline border, very soft shadow. Pill-shaped buttons.
-- **Green is the load-bearing colour**: it is *up*, it is *buy*, and it is the only fill on
-  a primary action. Nothing else competes with it.
-- **Price flash animations**: brief green/red background tint on price change, fading over
-  ~500ms via CSS animation. On a light surface the tint is a shimmer, not a badge — at a
-  500ms tick rate almost every row is mid-animation at any moment.
+- **Two appearances, not one.** Light and dark are equal citizens, and `system` is the default —
+  it follows the OS at load and keeps following it while the page is open. A header control
+  overrides it. This is the single largest departure from every earlier direction, and it is
+  what makes the app feel native rather than themed.
+- **Materials, not panels.** The sidebar and the toolbar are translucent, blurred and
+  saturation-boosted, so colour behind them shows through as tint rather than as grey. The
+  workspace canvas carries two very soft radial tints purely so the blur has something to
+  sample — a `backdrop-filter` over a flat fill is a no-op.
+- **Continuous corners.** 10px on controls, 14px on cards, 20px on chrome. Where the browser
+  supports `corner-shape`, these upgrade to real squircles; everywhere else the radii stand in.
+- **Hairlines carry structure.** 0.5px separators, inset to the text edge inside a grouped list,
+  so a run of rows reads as one group rather than as a stack of strips. Shadow is used sparingly
+  in light and almost not at all in dark, where the elevated surface does that work.
+- **Blue is interaction; green and red are direction.** systemBlue for selection, focus, links,
+  and the prominent action. Green and red mean up and down — and, in the two places where the
+  direction *is* the action, buy and sell. Nothing else competes.
+- **Price flash animations**: brief green/red background tint on price change, fading over ~500ms
+  via CSS animation. Its strength is a palette token rather than a constant, because at a 500ms
+  tick rate almost every row is mid-animation at any moment, and the alpha that is a shimmer on
+  white is a filled badge on black.
 - **Connection status indicator**: a small colored dot *paired with a text label* (Live /
   Connecting / Reconnecting / Disconnected), visible in the header.
 - **Data-dense but calm layout**: every pixel earns its place, but whitespace is allowed to
@@ -56,49 +68,63 @@ terminal. The density of a professional tool is kept; the intimidation is not.
 
 ### Color Scheme
 
-Defined once in `frontend/lib/theme.ts`, which both the Tailwind config and the canvas
-charting code import — a colour can never drift between the two. Every colour used for text
-is contrast-checked against the surface it sits on.
+Apple's system colour set, defined once in `frontend/lib/theme.ts` as two complete palettes.
+That file is the only place a colour literal appears; it emits the palettes two ways, and both
+outputs are generated from the same token list so they cannot disagree:
 
-**Surfaces**
-- Canvas: `#F2F5F7` · Card: `#FFFFFF` · Sunk: `#EDF1F4` · Border: `#E2E9EE`
-- Navigation rail: `#0E2029` (deep petrol)
+- as a `:root` / `:root[data-theme="dark"]` stylesheet of **"R G B" channel triples**, injected
+  into the document head, which Tailwind consumes as `rgb(var(--c-x) / <alpha-value>)` — the
+  triple rather than a hex is what lets `bg-blue/15` keep working;
+- as a plain object handed to the charts, because canvas and Recharts need a concrete colour at
+  draw time and cannot read a custom property.
+
+**Surfaces** — light / dark
+- Canvas: `#F2F2F7` / `#000000` · Card: `#FFFFFF` / `#1C1C1E` · Sunk: `#EBEBF0` / `#2C2C2E`
+- Separator: `#D8D8DC` / `#38383A` · Material tint: `#F6F6F8` / `#1C1C1E`, drawn at 72% through a blur
 
 **Ink**
-- Primary: `#0E2635` · Muted: `#63808F` · Faint: `#93A8B4`
+- Label: `#000000` / `#FFFFFF` · Secondary: `#5B5B60` / `#A1A1A6` · Faint: `#8E8E93` (both)
+- Apple's own secondaryLabel resolves to about 3.0:1, which this app's floor does not allow, so
+  the muted tone is darkened until it clears 4.5:1 on card and canvas alike.
 
-**Brand and direction**
-- Brand green (up / buy / primary CTA): `#13C636`, hover `#0B9E29`, wash `#E8FAEC`
-- Down / sell: `#F0435C`, text-safe `#C41F37`, wash `#FDECEE`
-- Up text-safe: `#0A7C22` — small coloured text uses the darkened variant so it clears 4.5:1
-- Flat / neutral: `#8FA5B1`
+**Blue — interaction, and only that**
+- systemBlue `#007AFF` / `#0A84FF` · fill `#0071EB` / `#0A70DE` · text `#0040DD` / `#4DA3FF` · wash `#E5F1FF` / `#14304A`
 
-**Retained accents** (carried over from the original terminal palette)
-- Accent Yellow: `#ecad0a` — connecting / reconnecting states. Carries the same
-  wash/text-safe pair as up and down (`#FDF3DC` / `#8A6206`), so the caution state is
-  built from tokens rather than a tint mixed in the component, and its small text clears
-  4.5:1 like every other coloured label
-- Blue Primary: `#209dd7` — keyboard focus ring
-- Purple Secondary: `#753991` — **defined but no longer used.** It was the submit-button fill;
-  against the green/coral direction system it now reads as a third, competing signal, so the
-  Send action uses primary ink instead. The token is kept so the choice can be revisited.
+**Direction**
+- Up: `#34C759` / `#30D158` · fill `#1F7F33` / `#22883A` · text `#1E7A32` / `#30D158` · wash `#E4F8EA` / `#14301C`
+- Down: `#FF3B30` / `#FF453A` · fill `#E02A20` / `#DE2A20` · text `#D70015` / `#FF453A` · wash `#FFE9E7` / `#3A1512`
+- Flat: `#66666A` / `#98989D` · Caution (systemOrange): `#FF9500` / `#FF9F0A`, with its own text and wash
 
-**Instrument identity colours.** eToro leans on a logo per instrument; with no logo assets,
-each symbol earns a stable colour instead, hashed from the symbol itself
-(`instrumentColor()`). The ten hues sit at a similar lightness so a full watchlist reads as
-one palette rather than confetti, and every one clears 4.5:1 against white monogram text.
-The same colour follows a holding through the watchlist chip, the positions table, the
-header's allocation bar, and the main chart's line.
+**Why each colour splits three ways.** A system colour is chosen to look right, not to carry
+text: white on systemGreen is 2.2:1 and systemGreen on white is 1.9:1, so one token cannot do
+both jobs. The base is used for anything that is not text — chart strokes, the flash tint, a
+status dot, a heatmap cell. `*Fill` is darkened until a white label on it clears 4.5:1, for
+buttons. `*Text` is darkened until it clears 4.5:1 as small text on a surface.
+`__tests__/lib/theme.test.ts` holds every one of those pairings to the line in both appearances,
+so the floor is enforced rather than asserted.
+
+**Instrument identity colours.** With no logo assets, each symbol earns a stable colour instead,
+hashed from the symbol itself (`instrumentColor(ticker, appearance)`). There are two sets: the
+light hues are deep enough to carry white monogram ink, the dark ones bright enough to carry
+near-black. None of them is systemBlue, systemGreen, or systemRed — those three are spoken for.
+The same colour follows a holding through the watchlist chip, the positions table, the header's
+allocation bar, and the main chart's line.
 
 ### Typography
 
-- **Display** — Figtree (600/700): brand, section titles, ticker symbols, buttons.
-- **Body and all numerals** — Inter (400–700). Every figure in the app is lining and
-  tabular, so a price moving from `$190.11` to `$190.98` does not shift its column.
-- **No monospace anywhere.** Both faces are pulled by `next/font/google` and self-hosted
-  into the static export, so the container never reaches a font CDN at runtime. This does
-  mean the frontend build needs network access to fetch them — the same requirement
-  `npm ci` already imposes.
+- **One family: the system stack.** `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI
+  Variable Text", …` resolves to genuine SF Pro on every Mac and iPhone, Segoe UI Variable on
+  Windows, and the platform default elsewhere. SF Pro is not licensed for web self-hosting and
+  is not on Google Fonts, so this is the only way to actually get it.
+- **No second family, and no monospace.** Apple distinguishes by weight, size and tracking rather
+  than by mixing faces. Body text is tracked at `-0.01em` and the portfolio value at `-0.03em`,
+  because SF is drawn tighter than the web defaults it replaces.
+- **All numerals are lining and tabular**, stated once on `body`, so a price moving from `$190.11`
+  to `$190.98` does not shift its column. SF, Segoe UI Variable and Roboto all carry tabular
+  figures, so this holds on every platform the stack resolves to.
+- **Nothing is downloaded.** The export contains no font files, and the frontend build no longer
+  needs network access to fetch any — removing a requirement the earlier directions imposed.
+
 
 ## 3. Architecture Overview
 
@@ -407,84 +433,102 @@ When `LLM_MOCK=true`, the backend returns deterministic mock responses instead o
 
 ### Layout
 
-The frontend is a single-page application shaped like a real trading platform: a fixed
-navigation rail, a value-bar header, and a three-column workspace where each panel owns its
-own scroll region. The page itself does not scroll on a wide screen.
+The frontend is a single-page application shaped like a macOS app: a translucent sidebar, a
+unified toolbar, and a three-column workspace where each panel owns its own scroll region. The
+page itself does not scroll on a wide screen.
 
 ```
-┌────┬──────────────────────────────────────────────────┐
-│    │  PORTFOLIO VALUE   ALLOCATION           ● Live   │
-│ R  │  $10,091.25  ▲ +$91.25   [██|██|██|░░]  cash     │
-│ A  ├───────────┬──────────────────────┬───────────────┤
-│ I  │ Watchlist │  Main chart          │  Assistant    │
-│ L  │  ⬤ AAPL   │                      │               │
-│    │  ⬤ NVDA   ├──────────────────────┤               │
-│    │  ⬤ MSFT   │  Trade ticket        │               │
-│    │           ├───────────┬──────────┤               │
-│    │           │ Allocation│ Perform. │               │
-│    │           ├───────────┴──────────┤               │
-│    │           │  Positions           │               │
-└────┴───────────┴──────────────────────┴───────────────┘
+┌────────┬──────────────────────────────────────────────────┐
+│ ▤ Trader │ PORTFOLIO VALUE  ALLOCATION      ● Live  ☀ ☾ ▭ │
+│          │ $10,091.25 ▲ +$91.25  [██|██|░░]   cash        │
+│ Watchlist├───────────┬──────────────────────┬─────────────┤
+│ Markets  │ Watchlist │  Main chart          │  Assistant  │
+│ Portfolio│  ⬤ AAPL   │                      │             │
+│ Assistant│  ⬤ NVDA   ├──────────────────────┤   ╭───────╮ │
+│          │  ⬤ MSFT   │  Trade ticket [S|B]  │   │bubble │ │
+│          │           ├───────────┬──────────┤   ╰───────╯ │
+│          │           │ Allocation│ Perform. │             │
+│          │           ├───────────┴──────────┤             │
+│          │           │  Positions           │             │
+└────────┴───────────┴──────────────────────┴─────────────┘
 ```
 
-Below the `lg` breakpoint this inverts: panels take their natural height and the page
-scrolls as a whole, because a fixed viewport split four ways leaves every panel too short
-to read.
+Below the `lg` breakpoint this inverts: the sidebar collapses to a horizontal icon bar, panels
+take their natural height, and the page scrolls as a whole, because a fixed viewport split four
+ways leaves every panel too short to read.
 
 The specific component architecture is up to the Frontend Engineer, but the UI should
 include these elements:
 
-- **Navigation rail** — fixed, dark, icon-led. Carries the brand mark and one entry per
-  workspace panel. Each entry shows that panel's live count (watchlist size, selected
-  ticker, open positions) and scrolls it into view on the narrow layouts, so the rail is
-  informative rather than decorative on wide screens where everything is already visible.
-- **Header value bar** — portfolio total value as the largest number on the page (updating
-  live), unrealized P&L in currency and percent, cash balance, connection status, and a
+- **Sidebar** — a macOS source list: translucent material, one row per workspace panel, each
+  carrying that panel's live count (watchlist size, selected ticker, open positions) and
+  scrolling it into view on the narrow layouts. Its labels are hidden below `lg`, which removes
+  them from the accessibility tree too, so each row names itself on the button rather than
+  relying on the text beside it.
+- **Unified toolbar** — chrome rather than a card, wearing the same material as the sidebar.
+  Carries the portfolio total value as the largest number on the page (updating live), unrealized
+  P&L in currency and percent, cash balance, connection status, the **appearance control**, and a
   **segmented allocation bar**: one segment per holding, width by weight, each wearing that
   instrument's identity colour.
-- **Watchlist panel** — one row per ticker: identity chip, symbol, company name, sparkline,
-  live price (flashing green/red on change), and daily change % in a tinted pill. Selection
-  is marked by a green edge marker, not colour alone.
-- **Main chart area** — larger chart for the currently selected ticker, price over time,
-  headed by the instrument's chip, name, live price and change pill. The line takes the
-  instrument's identity colour, so selecting a ticker recolours the chart to match the row
-  that was clicked — and green stays reserved for "up".
-- **Allocation & P&L heatmap** — treemap where each rectangle is a position, sized by
-  portfolio weight, shaded by return (green = profit, red = loss). A cell prints its ticker
-  and weight, adding the signed return once it is tall enough — on a freshly opened
-  portfolio every return is ~0% and the weight is the number actually worth reading.
+- **Appearance control** — a three-way segmented control (Light / Dark / System) in the toolbar.
+  `system` is a first-class choice, not the absence of one: it keeps tracking the OS after load.
+- **Watchlist panel** — a grouped inset list. One row per ticker: identity chip, symbol, company
+  name, sparkline, live price (flashing green/red on change), and daily change % in a tinted
+  pill. Separators are inset to the text edge; selection is a blue tint, and the row that is
+  selected suppresses the separators around it so the tinted block reads as one boundary.
+- **Main chart area** — larger chart for the currently selected ticker, price over time, headed
+  by the instrument's chip, name, live price and change pill. The line takes the instrument's
+  identity colour, so selecting a ticker recolours the chart to match the row that was clicked —
+  and green stays reserved for "up".
+- **Allocation & P&L heatmap** — treemap where each rectangle is a position, sized by portfolio
+  weight, shaded by return (green = profit, red = loss). A cell prints its ticker and weight,
+  adding the signed return once it is tall enough — on a freshly opened portfolio every return is
+  ~0% and the weight is the number actually worth reading.
 - **Performance chart** — area chart of total portfolio value over time, from
   `portfolio_snapshots`, headed by the session change.
-- **Positions table** — ticker (with chip and company name), quantity, avg cost, current
-  price, unrealized P&L, % change.
-- **Trade ticket** — labelled symbol field, units field, live order value, and pill-shaped
-  Sell / Buy actions. Market orders, instant fill.
-- **AI chat panel** — docked/collapsible sidebar with an avatar, rounded message bubbles,
-  suggested opening prompts, and a loading indicator while waiting for the LLM. Trade
-  executions and watchlist changes appear inline as receipts, carrying the instrument's
-  chip and named in the tense that is true — a filled order reads "Bought 10 AAPL", a
-  rejected one reads "Buy 10 AAPL".
+- **Positions table** — ticker (with chip and company name), quantity, avg cost, current price,
+  unrealized P&L, % change, on hairline separators.
+- **Trade ticket** — labelled symbol field, units field, live order value, and Sell / Buy actions
+  joined in a segmented track. They are two actions rather than two states of one choice, so each
+  half stays its own button with its own direction fill; the track is only what says they are a
+  pair. Market orders, instant fill.
+- **AI chat panel** — docked/collapsible sidebar with an avatar, iOS message bubbles (the user's
+  filled in the interaction colour, the assistant's in the neutral fill, each tightening its
+  corner into a tail), suggested opening prompts as tinted capsules, and a loading indicator
+  while waiting for the LLM. Trade executions and watchlist changes appear inline as receipts,
+  carrying the instrument's chip and named in the tense that is true — a filled order reads
+  "Bought 10 AAPL", a rejected one reads "Buy 10 AAPL".
 
 ### Technical Notes
 
 - Use `EventSource` for SSE connection to `/api/stream/prices`
 - Canvas-based charting library preferred (Lightweight Charts or Recharts) for performance
-- Price flash effect: derive the flash class during the render the price change already
-  causes, and restart the CSS animation by remounting the node with a new key — no timer, no
-  extra state, and no second render to clear the highlight
+- Price flash effect: derive the flash class during the render the price change already causes,
+  and restart the CSS animation by remounting the node with a new key — no timer, no extra state,
+  and no second render to clear the highlight
 - All API calls go to the same origin (`/api/*`) — no CORS configuration needed
-- Tailwind CSS for styling, with the token set of §2 defined once in `lib/theme.ts` and
-  imported by both the Tailwind config and the chart code
-- Canvas font strings cannot resolve a CSS custom property, so charts read the generated
-  font family off the document at mount
-- Charts render timestamps in the viewer's local time; the series is keyed by UTC seconds,
-  and an axis left on its default would put a different clock on one chart than on the one
-  beside it
-- Accessibility floor: colour is never the only encoding — every coloured number carries a
-  sign and an arrow glyph; keyboard focus stays visible; `prefers-reduced-motion` suppresses
-  the flash and the page-load reveal
-
----
+- Tailwind CSS for styling, with the token set of §2 defined once in `lib/theme.ts` and emitted
+  both as CSS custom properties for Tailwind and as an object for the charts
+- **The appearance reaches the charts through a store, not through CSS.** Custom properties
+  already carry the palette to every styled element; the store exists for the three consumers
+  that draw outside CSS — lightweight-charts into a canvas, Recharts into presentational SVG
+  attributes, and the instrument chips, whose colour is per-symbol and so cannot be a variable.
+  The canvas chart holds its colours rather than reading them, so a change of appearance rebuilds
+  it.
+- **The appearance is resolved before first paint.** The pages are prerendered, so a blocking
+  script in `<head>` stamps `data-theme` from `localStorage` or the OS preference ahead of any
+  styled element existing. The store adopts what that script already decided rather than deciding
+  again during render — resolving it any earlier in React would make the client's first render
+  disagree with the exported HTML.
+- Canvas font strings cannot name a font stack the way CSS can, so charts read the resolved
+  family off the document at mount
+- Charts render timestamps in the viewer's local time; the series is keyed by UTC seconds, and an
+  axis left on its default would put a different clock on one chart than on the one beside it
+- Accessibility floor: colour is never the only encoding — every coloured number carries a sign
+  and an arrow glyph; every foreground/background pairing the app renders small text in clears
+  4.5:1 in **both** appearances, enforced by test rather than by eye; keyboard focus stays
+  visible as the system blue halo; `prefers-reduced-motion` suppresses the flash and the
+  page-load reveal
 
 ## 11. Docker & Deployment
 
@@ -557,6 +601,10 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
   tense that is true rather than reported as done
 - Every coloured value carries its sign and arrow glyph, so meaning survives without colour
 - The heatmap's colour scale, tested directly rather than through the charting library
+- The palette itself: every foreground/background pairing the app renders small text in clears
+  4.5:1 in both appearances, every instrument monogram clears it on its own chip, and the
+  emitted stylesheet declares the same token set in both — so no token can silently fall back
+  to the other appearance's value
 
 ### E2E Tests (in `test/`)
 
@@ -583,10 +631,11 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 > **`planning/API_CONTRACT.md`**. This section is kept for provenance — read it to understand why
 > a decision was made, not to decide anything.
 >
-> **One exception.** The *visual* answers here and in `DECISIONS.md` (notably D-48) predate the
-> 2026-08-18 eToro redesign and still describe the dark `#0d1117` theme — see item #15 below.
-> §2 and §10 of this document supersede them on colour, typography, and layout. Everything
-> non-visual in §13 and `DECISIONS.md` still stands.
+> **One exception.** The *visual* answers here and in `DECISIONS.md` (notably D-48) predate both
+> 2026-08-18 redesigns — the eToro pass and the Apple pass that replaced it — and still describe
+> the dark `#0d1117` theme; see item #15 below. §2 and §10 of this document supersede them on
+> colour, typography, layout, appearance handling, and motion. Everything non-visual in §13 and
+> `DECISIONS.md` still stands.
 
 Added 2026-08-17 by a documentation review pass. This section is advisory — it raises gaps that
 two agents working in parallel (backend vs. frontend) would otherwise resolve differently. Items
@@ -664,6 +713,8 @@ marked **[decide]** need an answer before the relevant component is built; items
     green and red used for ticks, P&L, and the heatmap scale — the three most-used colors in the
     app. Add explicit tokens (up, down, neutral/flat, plus the heatmap gradient endpoints) and
     check contrast against `#0d1117`.
+    *Answered by §2 as rewritten: each direction colour splits into a base, a `*Fill` and a
+    `*Text` variant, in two appearances, and the contrast check is a test rather than a one-off.*
 16. **[decide] Timestamp format is inconsistent.** Prices use Unix float seconds (`time.time()`);
     every DB column uses ISO-8601 strings. Pick one representation for **JSON responses** — ISO-8601
     UTC everywhere is the safer default — and state it, or the frontend will need two parsers.
