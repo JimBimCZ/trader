@@ -81,6 +81,13 @@ routes and the first closure's cache wins — which breaks any pytest fixture th
 PLAN §6's "configurable interval" claim is not implementable. `SIM_SEED` makes E2E price assertions
 deterministic.
 
+**D-52 — `SIM_VOL_MULTIPLIER` scales simulated volatility, default 1.0.**
+A consequence of D-10: now that `dt` correctly tracks the tick rate, a faster tick produces
+proportionally smaller moves, so `SIM_TICK_MS` cannot be used to liven up a demo. Realistic
+volatility over a few seconds is sub-cent, which reads as a frozen screen. The multiplier is
+applied to sigma at step time rather than baked into `seed_prices.py`, so the stored per-ticker
+volatility still means what that file documents. Simulator only; it has no effect in Massive mode.
+
 **D-13 — The SSE stream sends a keepalive comment frame when the cache version has not changed.**
 (REVIEW A.3) Prevents idle proxies from dropping a connection that is legitimately quiet.
 

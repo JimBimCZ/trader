@@ -54,9 +54,14 @@ class GBMSimulator:
         dt: float = DEFAULT_DT,
         event_probability: float = 0.001,
         seed: int | None = None,
+        vol_multiplier: float = 1.0,
     ) -> None:
         self._dt = dt
         self._event_prob = event_probability
+        # Scales every ticker's volatility. Exists because dt is tied to the
+        # tick rate, so a faster tick produces proportionally smaller moves
+        # rather than livelier ones — this is the knob that makes prices move.
+        self._vol_multiplier = vol_multiplier
 
         # Instance-owned RNGs rather than the process-global ones, so a seeded
         # simulator is reproducible even if something else draws from `random`.
@@ -100,7 +105,9 @@ class GBMSimulator:
         for i, ticker in enumerate(self._tickers):
             params = self._params[ticker]
             mu = params["mu"]
-            sigma = params["sigma"]
+            # Applied here rather than baked into the stored params, so the
+            # seed data stays the documented per-ticker volatility.
+            sigma = params["sigma"] * self._vol_multiplier
 
             # GBM: S(t+dt) = S(t) * exp((mu - 0.5*sigma^2)*dt + sigma*sqrt(dt)*Z)
             drift = (mu - 0.5 * sigma**2) * self._dt
@@ -220,11 +227,13 @@ class SimulatorDataSource(MarketDataSource):
         update_interval: float = 0.5,
         event_probability: float = 0.001,
         seed: int | None = None,
+        vol_multiplier: float = 1.0,
     ) -> None:
         self._cache = price_cache
         self._interval = update_interval
         self._event_prob = event_probability
         self._seed = seed
+        self._vol_multiplier = vol_multiplier
         self._sim: GBMSimulator | None = None
         self._task: asyncio.Task | None = None
 
@@ -239,6 +248,7 @@ class SimulatorDataSource(MarketDataSource):
             dt=dt,
             event_probability=self._event_prob,
             seed=self._seed,
+            vol_multiplier=self._vol_multiplier,
         )
         # Seed the cache immediately so SSE and charts have data before the
         # first tick. The seed price is also the session baseline for the day.

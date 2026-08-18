@@ -71,6 +71,7 @@ def _build_market_source(settings: Settings, price_cache: PriceCache):
             price_cache=price_cache,
             update_interval=settings.sim_tick_seconds,
             seed=settings.sim_seed,
+            vol_multiplier=settings.sim_vol_multiplier,
         )
     return source
 

@@ -70,8 +70,9 @@ from app.market.tickers import canonicalize_ticker, validate_ticker
   `get`, `get_price`, `get_all`, `remove`, and a monotonic `version` used for SSE change detection.
 - **`MarketDataSource`** — `start(tickers)` → `add_ticker`/`remove_ticker` → `stop()`.
 - **`create_market_data_source(cache)`** — Massive if `MASSIVE_API_KEY` is set, else the simulator.
-  It takes no tuning arguments; `main.py` applies `SIM_SEED` and `SIM_TICK_MS` when constructing
-  the simulator.
+  It takes no tuning arguments; `main.py` applies `SIM_SEED`, `SIM_TICK_MS`, and
+  `SIM_VOL_MULTIPLIER` when constructing the simulator. The multiplier is the knob for visible
+  demo movement — `SIM_TICK_MS` is not, since `dt` scales with it.
 - **`create_stream_router(cache)`** — returns a fresh `APIRouter` mounting `GET /api/stream/prices`.
 
 Default tickers, seed prices, and per-ticker volatility live in `app/market/seed_prices.py`.

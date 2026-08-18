@@ -49,13 +49,18 @@ with `--env-file`.
 | `MASSIVE_API_KEY` | No | empty | Set to use real market data from Massive/Polygon. **Leave empty to use the built-in simulator**, which costs nothing and works offline. |
 | `LLM_MOCK` | No | `false` | `true` gives deterministic assistant responses with no API calls. Used by the E2E suite. |
 | `SIM_SEED` | No | unset | Seeds the simulator's RNG, making price paths reproducible. |
-| `SIM_TICK_MS` | No | `500` | Simulator tick interval. The GBM time step is derived from it, so changing it does not distort volatility. |
+| `SIM_TICK_MS` | No | `500` | Simulator tick interval. The GBM time step is derived from it, so a faster tick gives proportionally smaller moves, not livelier ones. |
+| `SIM_VOL_MULTIPLIER` | No | `1.0` | Scales simulated volatility. `1.0` is realistic — and realistic means cents per second, which looks static in a short demo. Try `25` for visibly moving prices, `100` for dramatic. |
 | `MASSIVE_POLL_SECONDS` | No | `15` | Massive poll interval. The default suits the free tier's 5 calls/minute. |
 
 ### Market data
 
 By default prices come from a geometric Brownian motion simulator with per-ticker volatility,
 correlated sector moves, and occasional 2–5% shocks. It needs no API key and no network.
+
+Out of the box it is calibrated to real volatility, which over a few seconds means sub-cent moves —
+accurate, but it can look frozen when you are demoing. `SIM_VOL_MULTIPLIER=25` makes the movement
+obvious without changing anything else about the model.
 
 With `MASSIVE_API_KEY` set, prices come from real market data instead. Outside market hours real
 quotes are static, so the display will look frozen and the flash animation will not fire. That is

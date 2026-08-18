@@ -51,6 +51,7 @@ class Settings:
     # Market data
     sim_seed: int | None = None
     sim_tick_ms: int = 500
+    sim_vol_multiplier: float = 1.0
     massive_poll_seconds: float = 15.0
 
     # Domain limits
@@ -90,5 +91,6 @@ class Settings:
             llm_mock=_env_bool("LLM_MOCK"),
             sim_seed=_env_int("SIM_SEED", None),
             sim_tick_ms=_env_int("SIM_TICK_MS", 500) or 500,
+            sim_vol_multiplier=_env_float("SIM_VOL_MULTIPLIER", 1.0),
             massive_poll_seconds=_env_float("MASSIVE_POLL_SECONDS", 15.0),
         )

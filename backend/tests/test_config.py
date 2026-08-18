@@ -68,3 +68,18 @@ class TestDerivedProperties:
         """A real key selects the Massive source."""
         s = Settings(db_path=tmp_path / "d", massive_api_key="abc123")
         assert s.market_source_name == "massive"
+
+
+class TestVolatilityMultiplier:
+    def test_defaults_to_one(self, monkeypatch):
+        """Unset means the model behaves exactly as documented."""
+        monkeypatch.delenv("SIM_VOL_MULTIPLIER", raising=False)
+        assert Settings.from_env().sim_vol_multiplier == 1.0
+
+    def test_parses_a_float(self, monkeypatch):
+        monkeypatch.setenv("SIM_VOL_MULTIPLIER", "12.5")
+        assert Settings.from_env().sim_vol_multiplier == 12.5
+
+    def test_invalid_value_falls_back_rather_than_crashing_startup(self, monkeypatch):
+        monkeypatch.setenv("SIM_VOL_MULTIPLIER", "very-volatile")
+        assert Settings.from_env().sim_vol_multiplier == 1.0
