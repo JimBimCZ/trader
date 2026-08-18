@@ -21,6 +21,7 @@ from .seed_prices import (
     TICKER_PARAMS,
     TSLA_CORR,
 )
+from .tickers import canonicalize_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,15 @@ class GBMSimulator:
         tickers: list[str],
         dt: float = DEFAULT_DT,
         event_probability: float = 0.001,
+        seed: int | None = None,
     ) -> None:
         self._dt = dt
         self._event_prob = event_probability
+
+        # Instance-owned RNGs rather than the process-global ones, so a seeded
+        # simulator is reproducible even if something else draws from `random`.
+        self._rng = random.Random(seed)
+        self._np_rng = np.random.default_rng(seed)
 
         # Per-ticker state
         self._tickers: list[str] = []
@@ -81,7 +88,7 @@ class GBMSimulator:
             return {}
 
         # Generate n independent standard normal draws
-        z_independent = np.random.standard_normal(n)
+        z_independent = self._np_rng.standard_normal(n)
 
         # Apply Cholesky to get correlated draws
         if self._cholesky is not None:
@@ -102,9 +109,9 @@ class GBMSimulator:
 
             # Random event: ~0.1% chance per tick per ticker
             # With 10 tickers at 2 ticks/sec, expect an event ~every 50 seconds
-            if random.random() < self._event_prob:
-                shock_magnitude = random.uniform(0.02, 0.05)
-                shock_sign = random.choice([-1, 1])
+            if self._rng.random() < self._event_prob:
+                shock_magnitude = self._rng.uniform(0.02, 0.05)
+                shock_sign = self._rng.choice([-1, 1])
                 self._prices[ticker] *= 1 + shock_magnitude * shock_sign
                 logger.debug(
                     "Random event on %s: %.1f%% %s",
@@ -119,6 +126,7 @@ class GBMSimulator:
 
     def add_ticker(self, ticker: str) -> None:
         """Add a ticker to the simulation. Rebuilds the correlation matrix."""
+        ticker = canonicalize_ticker(ticker)
         if ticker in self._prices:
             return
         self._add_ticker_internal(ticker)
@@ -126,6 +134,7 @@ class GBMSimulator:
 
     def remove_ticker(self, ticker: str) -> None:
         """Remove a ticker from the simulation. Rebuilds the correlation matrix."""
+        ticker = canonicalize_ticker(ticker)
         if ticker not in self._prices:
             return
         self._tickers.remove(ticker)
@@ -135,7 +144,7 @@ class GBMSimulator:
 
     def get_price(self, ticker: str) -> float | None:
         """Current price for a ticker, or None if not tracked."""
-        return self._prices.get(ticker)
+        return self._prices.get(canonicalize_ticker(ticker))
 
     def get_tickers(self) -> list[str]:
         """Return the list of currently tracked tickers."""
@@ -145,10 +154,11 @@ class GBMSimulator:
 
     def _add_ticker_internal(self, ticker: str) -> None:
         """Add a ticker without rebuilding Cholesky (for batch initialization)."""
+        ticker = canonicalize_ticker(ticker)
         if ticker in self._prices:
             return
         self._tickers.append(ticker)
-        self._prices[ticker] = SEED_PRICES.get(ticker, random.uniform(50.0, 300.0))
+        self._prices[ticker] = SEED_PRICES.get(ticker, self._rng.uniform(50.0, 300.0))
         self._params[ticker] = TICKER_PARAMS.get(ticker, dict(DEFAULT_PARAMS))
 
     def _rebuild_cholesky(self) -> None:
@@ -209,25 +219,35 @@ class SimulatorDataSource(MarketDataSource):
         price_cache: PriceCache,
         update_interval: float = 0.5,
         event_probability: float = 0.001,
+        seed: int | None = None,
     ) -> None:
         self._cache = price_cache
         self._interval = update_interval
         self._event_prob = event_probability
+        self._seed = seed
         self._sim: GBMSimulator | None = None
         self._task: asyncio.Task | None = None
 
     async def start(self, tickers: list[str]) -> None:
+        # dt must track the real tick rate. If it does not, changing
+        # update_interval silently rescales realized volatility.
+        dt = self._interval / GBMSimulator.TRADING_SECONDS_PER_YEAR
+
+        canonical = [canonicalize_ticker(t) for t in tickers]
         self._sim = GBMSimulator(
-            tickers=tickers,
+            tickers=canonical,
+            dt=dt,
             event_probability=self._event_prob,
+            seed=self._seed,
         )
-        # Seed the cache with initial prices so SSE has data immediately
-        for ticker in tickers:
+        # Seed the cache immediately so SSE and charts have data before the
+        # first tick. The seed price is also the session baseline for the day.
+        for ticker in canonical:
             price = self._sim.get_price(ticker)
             if price is not None:
-                self._cache.update(ticker=ticker, price=price)
+                self._cache.update(ticker=ticker, price=price, session_open=price)
         self._task = asyncio.create_task(self._run_loop(), name="simulator-loop")
-        logger.info("Simulator started with %d tickers", len(tickers))
+        logger.info("Simulator started with %d tickers", len(canonical))
 
     async def stop(self) -> None:
         if self._task and not self._task.done():
@@ -240,15 +260,17 @@ class SimulatorDataSource(MarketDataSource):
         logger.info("Simulator stopped")
 
     async def add_ticker(self, ticker: str) -> None:
+        ticker = canonicalize_ticker(ticker)
         if self._sim:
             self._sim.add_ticker(ticker)
             # Seed cache immediately so the ticker has a price right away
             price = self._sim.get_price(ticker)
             if price is not None:
-                self._cache.update(ticker=ticker, price=price)
+                self._cache.update(ticker=ticker, price=price, session_open=price)
             logger.info("Simulator: added ticker %s", ticker)
 
     async def remove_ticker(self, ticker: str) -> None:
+        ticker = canonicalize_ticker(ticker)
         if self._sim:
             self._sim.remove_ticker(ticker)
         self._cache.remove(ticker)

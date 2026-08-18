@@ -20,22 +20,40 @@ class PriceCache:
         self._lock = Lock()
         self._version: int = 0  # Monotonically increasing; bumped on every update
 
-    def update(self, ticker: str, price: float, timestamp: float | None = None) -> PriceUpdate:
+    def update(
+        self,
+        ticker: str,
+        price: float,
+        timestamp: float | None = None,
+        session_open: float | None = None,
+    ) -> PriceUpdate:
         """Record a new price for a ticker. Returns the created PriceUpdate.
 
         Automatically computes direction and change from the previous price.
         If this is the first update for the ticker, previous_price == price (direction='flat').
+
+        session_open is the baseline for daily change %: the simulator's seed price or
+        Massive's previous close. When omitted it is carried forward from the previous
+        update, defaulting to the first price ever seen for the ticker.
         """
         with self._lock:
             ts = timestamp or time.time()
             prev = self._prices.get(ticker)
             previous_price = prev.price if prev else price
 
+            if session_open is not None:
+                baseline = session_open
+            elif prev is not None:
+                baseline = prev.session_open
+            else:
+                baseline = price
+
             update = PriceUpdate(
                 ticker=ticker,
                 price=round(price, 2),
                 previous_price=round(previous_price, 2),
                 timestamp=ts,
+                session_open=round(baseline, 2),
             )
             self._prices[ticker] = update
             self._version += 1

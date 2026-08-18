@@ -209,3 +209,27 @@ __marimo__/
 # GitHub Actions
 #   Inherited workflows kept locally until their secrets are configured.
 .github/workflows/
+
+# --- Node / Next.js (frontend) ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+frontend/.env.local
+frontend/.env*.local
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Playwright (E2E) ---
+test/test-results/
+test/playwright-report/
+test/blob-report/
+test/.cache/
+
+# --- SQLite runtime database ---
+db/*.db
+db/*.db-wal
+db/*.db-shm
