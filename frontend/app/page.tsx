@@ -16,7 +16,7 @@ import { TradeBar } from "@/components/trade/TradeBar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 
 // The chart bundles are the heaviest dependencies and none of them matter on
-// first paint, so they load in parallel while the watchlist is already live.
+// first paint.
 const MainChart = dynamic(
   () => import("@/components/chart/MainChart").then((m) => m.MainChart),
   { ssr: false, loading: () => <div className={`card flex-1 ${PANELS.chart.minH} lg:min-h-0`} /> },
@@ -33,10 +33,8 @@ const PortfolioHeatmap = dynamic(
 export default function Page() {
   usePriceStream();
 
-  // Adopts the appearance the pre-paint script already resolved, and starts
-  // following the system setting. It runs after mount rather than during
-  // render because the page is prerendered: deciding this any earlier would
-  // make the client's first render disagree with the exported HTML.
+  // Runs after mount rather than during render because the page is
+  // prerendered: deciding any earlier would disagree with the exported HTML.
   const hydrateTheme = useTheme((s) => s.hydrate);
   useEffect(hydrateTheme, [hydrateTheme]);
 
@@ -51,19 +49,15 @@ export default function Page() {
     refreshChat();
   }, [refreshWatchlist, refreshPortfolio, refreshChat]);
 
-  // Positions change only on a trade, but their value moves with the market,
-  // so a slow poll keeps cash and cost basis honest without hammering the API.
+  // Positions change only on a trade, but their value moves with the market.
   useEffect(() => {
     const timer = setInterval(refreshPortfolio, 15_000);
     return () => clearInterval(timer);
   }, [refreshPortfolio]);
 
   return (
-    // On a wide screen the rail is fixed, the workspace fills what is left,
-    // and each panel owns its own scroll — the shape of a real trading
-    // platform. Below `lg` that inverts: the panels take their natural height
-    // and the page scrolls as a whole, because a fixed viewport split four
-    // ways leaves every panel too short to read.
+    // Below `lg` the fixed viewport split inverts to a page that scrolls as a
+    // whole, because four panels in one viewport leaves each too short to read.
     <div className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:flex-row">
       <Rail />
 

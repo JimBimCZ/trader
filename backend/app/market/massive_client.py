@@ -42,7 +42,6 @@ class MassiveDataSource(MarketDataSource):
         self._client = RESTClient(api_key=self._api_key)
         self._tickers = list(tickers)
 
-        # Do an immediate first poll so the cache has data right away
         await self._poll_once()
 
         self._task = asyncio.create_task(self._poll_loop(), name="massive-poller")
@@ -87,7 +86,6 @@ class MassiveDataSource(MarketDataSource):
             await self._poll_once()
 
     async def _poll_once(self) -> None:
-        """Execute one poll cycle: fetch snapshots, update cache."""
         if not self._tickers or not self._client:
             return
 
@@ -99,7 +97,7 @@ class MassiveDataSource(MarketDataSource):
             for snap in snapshots:
                 try:
                     price = snap.last_trade.price
-                    # Massive timestamps are Unix milliseconds → convert to seconds
+                    # Massive timestamps are Unix milliseconds.
                     timestamp = snap.last_trade.timestamp / 1000.0
                     self._cache.update(
                         ticker=snap.ticker,
@@ -117,8 +115,8 @@ class MassiveDataSource(MarketDataSource):
 
         except Exception as e:
             logger.error("Massive poll failed: %s", e)
-            # Don't re-raise — the loop will retry on the next interval.
-            # Common failures: 401 (bad key), 429 (rate limit), network errors.
+            # Not re-raised: the loop retries on the next interval. Common
+            # failures are 401, 429, and network errors.
 
     def _fetch_snapshots(self) -> list:
         """Synchronous call to the Massive REST API. Runs in a thread."""

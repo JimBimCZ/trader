@@ -10,7 +10,6 @@ export const test = base.extend<{ app: Page }>({
   app: async ({ page, request }, use) => {
     await request.post("/api/reset");
     await page.goto("/");
-    // The watchlist is the first thing to render from real data.
     await expect(page.getByTestId("watchlist-row-AAPL")).toBeVisible();
     await use(page);
   },

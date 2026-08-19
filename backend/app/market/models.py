@@ -18,12 +18,10 @@ class PriceUpdate:
 
     @property
     def change(self) -> float:
-        """Absolute price change from previous update."""
         return round(self.price - self.previous_price, 4)
 
     @property
     def change_percent(self) -> float:
-        """Percentage change from previous update."""
         if self.previous_price == 0:
             return 0.0
         return round((self.price - self.previous_price) / self.previous_price * 100, 4)
@@ -48,7 +46,6 @@ class PriceUpdate:
 
     @property
     def direction(self) -> str:
-        """'up', 'down', or 'flat'."""
         if self.price > self.previous_price:
             return "up"
         elif self.price < self.previous_price:
@@ -56,7 +53,6 @@ class PriceUpdate:
         return "flat"
 
     def to_dict(self) -> dict:
-        """Serialize for JSON / SSE transmission."""
         return {
             "ticker": self.ticker,
             "price": self.price,

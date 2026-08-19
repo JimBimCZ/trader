@@ -2,11 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-/**
- * jsdom has no EventSource, so the stream hook needs a double that tests can
- * drive by hand. The surface is small enough that a dependency would cost
- * more than it saves.
- */
+/** jsdom has no EventSource, so tests drive this double by hand. */
 export class FakeEventSource {
   static instances: FakeEventSource[] = [];
   static readonly CONNECTING = 0;

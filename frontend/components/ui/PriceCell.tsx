@@ -4,11 +4,9 @@ import { usePriceStore } from "@/lib/stream/priceStore";
 import { formatPrice } from "@/lib/format";
 
 /**
- * A live price with a flash on change.
- *
- * The flash class is derived during the render the price change already
- * causes, and the key forces the CSS animation to restart. No timer, no extra
- * state, no second render to clear the highlight.
+ * A live price with a flash on change. The flash class is derived during the
+ * render the price change already causes, and the key forces the CSS animation
+ * to restart — no timer, no extra state.
  */
 export function PriceCell({
   ticker,

@@ -11,12 +11,8 @@ import { ThemeToggle } from "../ui/ThemeToggle";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
 /**
- * The unified toolbar.
- *
- * Not a card: on macOS the toolbar is chrome, so it takes the same
- * translucent material as the sidebar rather than floating as a third plane.
- * The portfolio value is the window's title in everything but name, which is
- * why it is the only large type on the page.
+ * The unified toolbar. Chrome rather than a card, so it takes the same
+ * translucent material as the sidebar.
  */
 export function Header() {
   const cash = usePortfolioStore((s) => s.cashBalance);
@@ -32,8 +28,8 @@ export function Header() {
     cash,
   );
 
-  // The bar weighs each holding against the whole account, cash included, so
-  // the gap at its end is the uninvested balance.
+  // Weighed against the whole account, cash included, so the gap at the end
+  // of the bar is the uninvested balance.
   const share = (value: number) => (totalValue ? (value / totalValue) * 100 : 0);
 
   return (
@@ -41,8 +37,6 @@ export function Header() {
       <div className="min-w-0">
         <p className="field-label">Portfolio value</p>
         <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
-          {/* SF Pro Display territory: large, tightly tracked, and the only
-              thing on the page set at this size. */}
           <span
             className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text"
             data-testid="total-value"
@@ -56,8 +50,8 @@ export function Header() {
         </div>
       </div>
 
-      {/* Allocation, at a glance. Each segment wears the holding's own colour,
-          the same one it carries in the watchlist and the positions table. */}
+      {/* Each segment wears the holding's own colour, the same one it carries
+          in the watchlist and the positions table. */}
       <div className="min-w-[200px] flex-1">
         <div className="flex items-baseline justify-between">
           <p className="field-label">Allocation</p>

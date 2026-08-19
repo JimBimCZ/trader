@@ -84,10 +84,8 @@ export function TradeBar() {
           </span>
         </div>
 
-        {/* Sell and Buy are two actions, not two states of one choice, so
-            they cannot be a selection — but they are a pair, and the track is
-            what says so. Each half stays its own button, keeping its own fill
-            and its own direction colour. */}
+        {/* Sell and Buy are two actions, not two states of one choice, so they
+            cannot be a selection — the track is only what says they are a pair. */}
         <SegmentTrack className="w-full sm:ml-auto sm:w-auto">
           {/* Disabled while a request is in flight, which is all the
               double-submit protection a fake-money demo warrants. */}

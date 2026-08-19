@@ -25,7 +25,6 @@ class TestGBMSimulator:
     def test_initial_prices_match_seeds(self):
         """Test that initial prices match seed prices."""
         sim = GBMSimulator(tickers=["AAPL"])
-        # Before any step, price should be the seed price
         assert sim.get_price("AAPL") == SEED_PRICES["AAPL"]
 
     def test_add_ticker(self):
@@ -76,7 +75,6 @@ class TestGBMSimulator:
             sim.step()
 
         final_price = sim.get_price("AAPL")
-        # Price should have changed (extremely unlikely to be exactly the seed)
         assert final_price != initial_price
 
     def test_cholesky_rebuilds_on_add(self):
@@ -127,7 +125,6 @@ class TestGBMSimulator:
         sim = GBMSimulator(tickers=["AAPL"])
         result = sim.step()
         price_str = str(result["AAPL"])
-        # Check that we have at most 2 decimal places
         if "." in price_str:
             decimal_part = price_str.split(".")[1]
             assert len(decimal_part) <= 2

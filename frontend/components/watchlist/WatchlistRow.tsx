@@ -9,12 +9,8 @@ import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { CloseIcon } from "../ui/icons";
 
 /**
- * One row of the grouped inset list.
- *
- * Selection is a blue tint rather than an edge marker: blue is the app's
- * interaction colour now, so the row that is current can say so in the same
- * language as every other selected thing. The `data-selected` attribute is
- * what tells the separator above it to step aside.
+ * One row of the grouped inset list. The `data-selected` attribute is what
+ * tells the separator above it to step aside.
  */
 export function WatchlistRow({ ticker }: { ticker: string }) {
   const selected = useWatchlistStore((s) => s.selectedTicker === ticker);

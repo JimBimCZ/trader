@@ -60,7 +60,6 @@ class PriceCache:
             return update
 
     def get(self, ticker: str) -> PriceUpdate | None:
-        """Get the latest price for a single ticker, or None if unknown."""
         with self._lock:
             return self._prices.get(ticker)
 
@@ -70,12 +69,10 @@ class PriceCache:
             return dict(self._prices)
 
     def get_price(self, ticker: str) -> float | None:
-        """Convenience: get just the price float, or None."""
         update = self.get(ticker)
         return update.price if update else None
 
     def remove(self, ticker: str) -> None:
-        """Remove a ticker from the cache (e.g., when removed from watchlist)."""
         with self._lock:
             self._prices.pop(ticker, None)
 

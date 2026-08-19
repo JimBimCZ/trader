@@ -11,7 +11,6 @@ import { PANELS } from "../layout/panels";
 
 const PROMPTS = ["How is my portfolio doing?", "Buy 10 AAPL", "What should I trim?"];
 
-/** The assistant's mark, standing in for the instrument chips beside it. */
 function AiAvatar({ className = "h-7 w-7" }: { className?: string }) {
   return (
     <span

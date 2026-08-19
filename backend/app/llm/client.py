@@ -61,7 +61,6 @@ class LiveChatClient(ChatClient):
             raise LLMError("The assistant returned a malformed response.") from exc
 
     async def _call(self, messages: list[dict]) -> str:
-        """One structured-output completion, with a timeout."""
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(self._completion, messages), timeout=self._timeout

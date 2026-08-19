@@ -4,16 +4,6 @@ import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { PANELS, type PanelKey } from "./panels";
 
-/**
- * The sidebar.
- *
- * A macOS source list rather than a dark navigation bar: translucent material
- * over the workspace, its items drawn as quiet rows that tint blue when they
- * are the current one. On a wide screen every panel it lists is already on
- * the page, so each item earns its place by carrying that panel's live count
- * and by scrolling it into view on the narrow layouts, where the workspace
- * stacks.
- */
 const ICONS: Record<PanelKey, string> = {
   watchlist: "M4 6h16M4 12h10M4 18h6",
   chart: "M4 18l5-6 4 3 6.5-8",
@@ -30,8 +20,6 @@ export function Rail() {
   const selected = useWatchlistStore((s) => s.selectedTicker);
   const positions = usePortfolioStore((s) => s.positions);
 
-  // Each entry carries its panel's live count, which is what earns the
-  // sidebar its place on a wide screen where every panel is already visible.
   const badges: Record<PanelKey, string | undefined> = {
     watchlist: String(tickers.length),
     chart: selected ?? undefined,
@@ -64,9 +52,8 @@ export function Rail() {
         <button
           key={key}
           onClick={() => scrollTo(PANELS[key].id)}
-          // The label is display:none below `lg`, which takes it out of the
-          // accessibility tree along with the layout — so the name is stated
-          // on the button itself rather than left to the text beside it.
+          // The label is hidden below `lg`, which takes it out of the
+          // accessibility tree along with the layout.
           aria-label={PANELS[key].label}
           className="group flex flex-1 items-center gap-2 rounded-control px-2 py-1.5 text-left transition hover:bg-surface-sunk lg:flex-none"
         >

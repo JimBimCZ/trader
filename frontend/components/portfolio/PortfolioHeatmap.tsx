@@ -12,11 +12,8 @@ import { CHART_MIN_H } from "../layout/panels";
 /**
  * Maps a position's return to a colour on the loss-neutral-profit scale.
  *
- * Saturates at ±10% so one runaway position does not flatten every other
- * cell to the same neutral grey. Takes the palette rather than reaching for
- * it, both because the scale has to answer differently in each appearance and
- * because that keeps it a pure function — this is the risky part of the
- * component, and it is unit-tested directly rather than through Recharts.
+ * Saturates at ±10% so one runaway position does not flatten every other cell
+ * to the same neutral grey.
  */
 export function pnlToColor(pctChange: number, palette: Palette = palettes.light): string {
   const { colors } = palette;
@@ -25,13 +22,7 @@ export function pnlToColor(pctChange: number, palette: Palette = palettes.light)
   return clamped > 0 ? colors.heatmapProfitDeep : colors.heatmapLossDeep;
 }
 
-/**
- * How saturated that colour is drawn.
- *
- * Capped below full strength so the label keeps 4.5:1 even on the deepest
- * loss cell — the fill is what dictates the text contrast, not the other way
- * round, in both appearances.
- */
+/** Capped below full strength so the label keeps 4.5:1 on the deepest cell. */
 export function pnlOpacity(pctChange: number): number {
   const magnitude = Math.min(Math.abs(pctChange), 10) / 10;
   return 0.35 + magnitude * 0.55;
@@ -46,7 +37,6 @@ interface CellProps {
   ticker?: string;
   pct?: number;
   weight?: number;
-  /** Recharts clones the content element, so this arrives as a prop. */
   palette?: Palette;
 }
 
@@ -62,14 +52,13 @@ function Cell({
   palette = palettes.light,
 }: CellProps) {
   const { colors } = palette;
-  // Recharts invokes the content renderer for the root node too. Drawing it
-  // would stack a second rectangle and label on top of the real cells.
+  // Recharts invokes the content renderer for the root node too, which would
+  // stack a second rectangle and label on top of the real cells.
   if (depth === 0) return null;
 
   const showLabel = width > 48 && height > 32;
-  // The return only earns its line once the weight already has one — on a
-  // freshly opened portfolio every return is ~0% and the weight is the number
-  // actually worth reading.
+  // On a freshly opened portfolio every return is ~0%, so the weight is the
+  // line worth keeping when only one fits.
   const showReturn = showLabel && height > 52;
   return (
     <g>
@@ -89,9 +78,6 @@ function Cell({
           <text x={x + 10} y={y + 20} fill={colors.text} fontSize={12} fontWeight={700}>
             {ticker}
           </text>
-          {/* Weight, then return. The arrow is what tells them apart — the
-              same glyph that marks a change everywhere else in the app — so
-              neither line needs a label that would overflow a narrow cell. */}
           <text x={x + 10} y={y + 35} fill={colors.text} fontSize={11} opacity={0.6}>
             {weight.toFixed(1)}%
           </text>
@@ -113,13 +99,12 @@ export function PortfolioHeatmap() {
   const positions = usePortfolioStore((s) => s.positions);
   const livePrices = usePriceStore((s) => s.prices);
 
-  // Weighted against invested value rather than the account total: this is a
-  // map of the portfolio, and cash has no rectangle on it.
+  // Weighted against invested value rather than the account total: cash has
+  // no rectangle on this map.
   let invested = 0;
   const sized = positions.map((position) => {
     const { pctChange, value } = valueHolding(position, livePrices);
-    // A floor keeps a near-worthless holding addressable rather than collapsing
-    // its rectangle to nothing.
+    // A floor keeps a near-worthless holding addressable.
     const size = Math.max(value, 0.01);
     invested += size;
     return { name: position.ticker, ticker: position.ticker, size, pct: pctChange };

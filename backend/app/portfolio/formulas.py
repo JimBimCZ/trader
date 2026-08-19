@@ -22,28 +22,21 @@ def round_quantity(value: float) -> float:
 
 
 def market_value(quantity: float, price: float) -> float:
-    """Current value of a holding."""
     return round_cash(quantity * price)
 
 
 def unrealized_pnl(quantity: float, avg_cost: float, price: float) -> float:
-    """Profit or loss on an open position, not yet realized by a sale."""
     return round_cash((price - avg_cost) * quantity)
 
 
 def position_pct_change(avg_cost: float, price: float) -> float:
-    """Return since acquisition, as a percentage.
-
-    This is not the daily change: it is measured from avg_cost, not from the
-    session open.
-    """
+    """Measured from avg_cost, not from the session open — not the daily change."""
     if avg_cost == 0:
         return 0.0
     return round((price - avg_cost) / avg_cost * 100, 4)
 
 
 def buy_avg_cost(old_qty: float, old_avg: float, fill_qty: float, fill_price: float) -> float:
-    """Weighted average cost after adding to a position."""
     total_qty = old_qty + fill_qty
     if total_qty <= EPSILON:
         return round_cash(fill_price)
@@ -56,7 +49,6 @@ def realized_pnl(sell_qty: float, avg_cost: float, sell_price: float) -> float:
 
 
 def value_position(position: Position, price: float) -> ValuedPosition:
-    """Price a position against the live cache."""
     return ValuedPosition(
         ticker=position.ticker,
         quantity=position.quantity,

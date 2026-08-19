@@ -3,14 +3,6 @@
 import { instrumentName } from "@/lib/instruments";
 import { TickerChip } from "./TickerChip";
 
-/**
- * An instrument, named.
- *
- * The chip plus the symbol plus the company beneath it is the app's most
- * repeated visual unit — it heads the chart, labels every watchlist row, and
- * opens every positions row. One component so the identity treatment is one
- * decision rather than three that drift.
- */
 export function InstrumentLabel({
   ticker,
   size = "sm",

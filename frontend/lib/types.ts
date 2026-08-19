@@ -5,7 +5,6 @@
  * types are what the app uses internally, converted at the parse boundary.
  */
 
-/** One ticker's entry in an SSE frame. */
 export interface RawPriceUpdate {
   ticker: string;
   price: number;

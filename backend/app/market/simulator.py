@@ -43,8 +43,7 @@ class GBMSimulator:
     produces sub-cent moves per tick that accumulate naturally over time.
     """
 
-    # 500ms expressed as a fraction of a trading year
-    # 252 trading days * 6.5 hours/day * 3600 seconds/hour = 5,896,800 seconds
+    # 252 trading days * 6.5 hours/day * 3600 seconds/hour
     TRADING_SECONDS_PER_YEAR = 252 * 6.5 * 3600  # 5,896,800
     DEFAULT_DT = 0.5 / TRADING_SECONDS_PER_YEAR  # ~8.48e-8
 
@@ -58,25 +57,22 @@ class GBMSimulator:
     ) -> None:
         self._dt = dt
         self._event_prob = event_probability
-        # Scales every ticker's volatility. Exists because dt is tied to the
-        # tick rate, so a faster tick produces proportionally smaller moves
-        # rather than livelier ones — this is the knob that makes prices move.
+        # Scales every ticker's volatility. dt is tied to the tick rate, so a
+        # faster tick produces smaller moves rather than livelier ones — this
+        # is the knob that makes prices move.
         self._vol_multiplier = vol_multiplier
 
-        # Instance-owned RNGs rather than the process-global ones, so a seeded
-        # simulator is reproducible even if something else draws from `random`.
+        # Instance-owned RNGs, so a seeded simulator is reproducible even if
+        # something else draws from `random`.
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
 
-        # Per-ticker state
         self._tickers: list[str] = []
         self._prices: dict[str, float] = {}
         self._params: dict[str, dict[str, float]] = {}
 
-        # Cholesky decomposition of the correlation matrix (for correlated moves)
         self._cholesky: np.ndarray | None = None
 
-        # Initialize all starting tickers
         for ticker in tickers:
             self._add_ticker_internal(ticker)
         self._rebuild_cholesky()
@@ -92,10 +88,8 @@ class GBMSimulator:
         if n == 0:
             return {}
 
-        # Generate n independent standard normal draws
         z_independent = self._np_rng.standard_normal(n)
 
-        # Apply Cholesky to get correlated draws
         if self._cholesky is not None:
             z_correlated = self._cholesky @ z_independent
         else:
@@ -109,13 +103,12 @@ class GBMSimulator:
             # seed data stays the documented per-ticker volatility.
             sigma = params["sigma"] * self._vol_multiplier
 
-            # GBM: S(t+dt) = S(t) * exp((mu - 0.5*sigma^2)*dt + sigma*sqrt(dt)*Z)
             drift = (mu - 0.5 * sigma**2) * self._dt
             diffusion = sigma * math.sqrt(self._dt) * z_correlated[i]
             self._prices[ticker] *= math.exp(drift + diffusion)
 
-            # Random event: ~0.1% chance per tick per ticker
-            # With 10 tickers at 2 ticks/sec, expect an event ~every 50 seconds
+            # ~0.1% per tick per ticker: with 10 tickers at 2 ticks/sec, an
+            # event roughly every 50 seconds.
             if self._rng.random() < self._event_prob:
                 shock_magnitude = self._rng.uniform(0.02, 0.05)
                 shock_sign = self._rng.choice([-1, 1])
@@ -150,11 +143,9 @@ class GBMSimulator:
         self._rebuild_cholesky()
 
     def get_price(self, ticker: str) -> float | None:
-        """Current price for a ticker, or None if not tracked."""
         return self._prices.get(canonicalize_ticker(ticker))
 
     def get_tickers(self) -> list[str]:
-        """Return the list of currently tracked tickers."""
         return list(self._tickers)
 
     # --- Internals ---
@@ -178,7 +169,6 @@ class GBMSimulator:
             self._cholesky = None
             return
 
-        # Build the correlation matrix
         corr = np.eye(n)
         for i in range(n):
             for j in range(i + 1, n):
@@ -202,7 +192,7 @@ class GBMSimulator:
         tech = CORRELATION_GROUPS["tech"]
         finance = CORRELATION_GROUPS["finance"]
 
-        # TSLA is in tech set but behaves independently
+        # TSLA is in the tech set but behaves independently.
         if t1 == "TSLA" or t2 == "TSLA":
             return TSLA_CORR
 
@@ -273,7 +263,6 @@ class SimulatorDataSource(MarketDataSource):
         ticker = canonicalize_ticker(ticker)
         if self._sim:
             self._sim.add_ticker(ticker)
-            # Seed cache immediately so the ticker has a price right away
             price = self._sim.get_price(ticker)
             if price is not None:
                 self._cache.update(ticker=ticker, price=price, session_open=price)
@@ -290,7 +279,6 @@ class SimulatorDataSource(MarketDataSource):
         return self._sim.get_tickers() if self._sim else []
 
     async def _run_loop(self) -> None:
-        """Core loop: step the simulation, write to cache, sleep."""
         while True:
             try:
                 if self._sim:

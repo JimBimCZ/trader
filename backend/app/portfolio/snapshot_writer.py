@@ -39,7 +39,6 @@ class SnapshotWriter:
         logger.info("Snapshot writer started (every %.0fs)", self._interval)
 
     async def stop(self) -> None:
-        """Stop the task. Safe to call more than once."""
         if self._task and not self._task.done():
             self._task.cancel()
             try:

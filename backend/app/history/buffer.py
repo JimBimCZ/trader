@@ -46,7 +46,6 @@ class HistoryStore:
         self._points.pop(ticker, None)
 
     def clear(self) -> None:
-        """Forget everything. Used by POST /api/reset."""
         self._points.clear()
 
     def __len__(self) -> int:

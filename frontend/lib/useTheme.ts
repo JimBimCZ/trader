@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { palettes, type Appearance, type Palette } from "./theme";
 
-/** What the user chose. `system` defers to the OS, and keeps deferring. */
+/** `system` defers to the OS, and keeps deferring. */
 export type ThemeMode = "light" | "dark" | "system";
 
 export const THEME_STORAGE_KEY = "trader-theme";
@@ -39,19 +39,14 @@ function apply(appearance: Appearance, mode: ThemeMode) {
 }
 
 /**
- * The current appearance, for everything CSS cannot reach.
- *
- * Custom properties already carry the palette to every styled element, so
- * this store exists for the three consumers that draw outside CSS —
- * lightweight-charts into a canvas, Recharts into presentational SVG
- * attributes, and the instrument chips, whose colour is per-symbol and so
- * cannot be a variable.
+ * The current appearance, for the consumers that draw outside CSS:
+ * lightweight-charts into a canvas, Recharts into SVG attributes, and the
+ * instrument chips, whose colour is per-symbol and so cannot be a variable.
  *
  * It initialises to `light` unconditionally rather than reading the DOM,
- * because the pages are prerendered: resolving the real appearance during the
- * first render would make the client's markup disagree with the exported HTML.
- * `hydrate` picks up the truth immediately after mount, from the attribute the
- * pre-paint script has already set.
+ * because the pages are prerendered and a first render that disagreed with the
+ * exported HTML would be a hydration mismatch. `hydrate` picks up the truth
+ * immediately after mount, from the attribute the pre-paint script set.
  */
 export const useTheme = create<ThemeState>((set, get) => ({
   mode: "system",
@@ -64,7 +59,7 @@ export const useTheme = create<ThemeState>((set, get) => ({
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, mode);
     } catch {
-      // Private browsing denies storage; the choice simply lasts one session.
+      // Private browsing denies storage; the choice lasts one session.
     }
     set({ mode, appearance, palette: palettes[appearance] });
   },
@@ -97,5 +92,4 @@ export const useTheme = create<ThemeState>((set, get) => ({
   },
 }));
 
-/** The palette alone, for the many components that need nothing else. */
 export const usePalette = (): Palette => useTheme((s) => s.palette);

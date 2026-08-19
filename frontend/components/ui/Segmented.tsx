@@ -3,13 +3,9 @@
 import type { ReactNode } from "react";
 
 /**
- * The track a segmented control sits in.
- *
- * On Apple platforms this is a sunken well holding tightly-packed segments,
- * and it is the shape that tells you the controls belong together. Exported
- * on its own because the trade ticket needs the shape without the semantics:
- * Sell and Buy are two actions, not two states of one choice, so they cannot
- * be a selection — but they read as a pair and should look like one.
+ * The track a segmented control sits in. Exported on its own because the trade
+ * ticket needs the shape without the semantics: Sell and Buy are two actions,
+ * not two states of one choice, so they cannot be a selection.
  */
 export function SegmentTrack({
   children,
@@ -29,13 +25,7 @@ interface Option<T extends string> {
   icon?: ReactNode;
 }
 
-/**
- * A single choice among a few, as one control.
- *
- * The selected segment lifts onto its own surface rather than colouring in,
- * which is how the platform marks selection here — so the control stays quiet
- * in a toolbar that already has a portfolio value competing for attention.
- */
+/** A single choice among a few, as one control. */
 export function SegmentedControl<T extends string>({
   value,
   options,
@@ -46,7 +36,6 @@ export function SegmentedControl<T extends string>({
   value: T;
   options: readonly Option<T>[];
   onChange: (value: T) => void;
-  /** Names the group for assistive technology. */
   label: string;
   className?: string;
 }) {

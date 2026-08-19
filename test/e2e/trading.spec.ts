@@ -11,7 +11,6 @@ test.describe("Trading", () => {
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
     await expect(app.getByTestId("position-AAPL")).toContainText("10");
 
-    // Roughly $1,900 of a $10,000 balance.
     await expect
       .poll(async () => {
         const text = (await app.getByTestId("cash-balance").textContent()) ?? "";

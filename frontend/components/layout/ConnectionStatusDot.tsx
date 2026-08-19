@@ -20,8 +20,6 @@ export function ConnectionStatusDot() {
       data-testid="connection-status"
       data-status={status}
     >
-      {/* The text label carries the meaning; the dot is decoration, since
-          colour alone would exclude some users. */}
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
       <span>{text}</span>
     </div>
