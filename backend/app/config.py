@@ -73,17 +73,14 @@ class Settings:
 
     @property
     def sim_tick_seconds(self) -> float:
-        """Simulator tick interval in seconds."""
         return self.sim_tick_ms / 1000.0
 
     @property
     def market_source_name(self) -> str:
-        """Which market data implementation the current config selects."""
         return "massive" if self.massive_api_key.strip() else "simulator"
 
     @classmethod
     def from_env(cls, db_path: Path | None = None) -> Settings:
-        """Build settings from the process environment."""
         return cls(
             db_path=db_path or Path(os.environ.get("DB_PATH", "db/trader.db")),
             massive_api_key=os.environ.get("MASSIVE_API_KEY", ""),

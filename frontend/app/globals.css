@@ -2,9 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* The colour tokens themselves are not here — they are emitted into the
-   document head from `lib/theme.ts`, so the palette has exactly one source.
-   Everything below composes them. */
+/* The colour tokens are emitted into the document head from `lib/theme.ts`,
+   so the palette has one source. Everything below composes them. */
 
 html,
 body {
@@ -14,23 +13,16 @@ body {
 body {
   background-color: theme("colors.bg");
   color: theme("colors.text");
-  /* Every figure in the app is lining and tabular, so a price changing from
-     $190.11 to $190.98 does not shift the column. SF, Segoe UI Variable and
-     Roboto all carry tabular figures, so this holds on every platform the
-     system stack resolves to. */
+  /* Tabular figures, so a price changing from $190.11 to $190.98 does not
+     shift the column. */
   font-variant-numeric: tabular-nums lining-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* SF is drawn tighter than the web defaults it replaces. */
   letter-spacing: -0.01em;
 }
 
-/* The ground the vibrancy samples.
-
-   `backdrop-filter` over a flat fill is a no-op — a blur of one colour is
-   that colour. Two very soft tints behind the workspace give the translucent
-   sidebar and toolbar something to actually pick up, which is the whole
-   reason Apple's materials read as glass rather than as grey. */
+/* The ground the vibrancy samples. `backdrop-filter` over a flat fill is a
+   no-op, so two soft tints give the sidebar and toolbar something to pick up. */
 body::before {
   content: "";
   position: fixed;
@@ -50,15 +42,14 @@ textarea {
 
 /* ── Materials and containers ─────────────────────────────────────────── */
 
-/* A content plane. In light it floats on the grey canvas; in dark the border
-   does the work a shadow cannot do against black. */
+/* A content plane. In dark the border does the work a shadow cannot do
+   against black. */
 .card {
   @apply rounded-card border-hairline border-border bg-surface shadow-card;
 }
 
-/* Chrome — the sidebar and the toolbar. Translucent, blurred, and saturated,
-   which is what separates an Apple material from a semi-transparent panel:
-   the saturation boost is what keeps colour behind the glass from going grey. */
+/* Chrome — the sidebar and the toolbar. The saturation boost is what keeps
+   colour behind the glass from going grey. */
 .material {
   @apply rounded-panel border-hairline border-border;
   background-color: rgb(var(--c-material) / 0.72);
@@ -66,8 +57,7 @@ textarea {
   backdrop-filter: blur(30px) saturate(180%);
 }
 
-/* Where the browser has continuous corners, take the real curve. Everywhere
-   else the radii above already stand in for it. */
+/* Where the browser has continuous corners, take the real curve. */
 @supports (corner-shape: squircle) {
   .card,
   .material,
@@ -80,19 +70,16 @@ textarea {
   }
 }
 
-/* A section's heading strip. Nothing shouts: on Apple platforms the title is
-   the smallest confident thing on the panel, not the loudest. */
 .card-title {
   @apply flex items-center justify-between gap-3 px-4 pb-2.5 pt-3.5 text-[13px] font-semibold tracking-[-0.01em] text-text;
 }
 
-/* The small caps label above a value or an input. */
 .field-label {
   @apply text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted;
 }
 
-/* Apple's text field: a filled well rather than an outlined box, gaining a
-   focus ring rather than a heavier border. */
+/* A filled well rather than an outlined box, gaining a focus ring rather than
+   a heavier border. */
 .field {
   @apply rounded-control border-hairline border-transparent bg-surface-sunk px-3 py-2 text-[13px]
          text-text placeholder:text-text-faint focus:border-blue focus:outline-none
@@ -102,10 +89,8 @@ textarea {
 
 /* A row in a grouped inset list.
 
-   The separator is drawn as a pseudo-element rather than a border so it can
-   start at the text edge instead of the container edge — the inset is what
-   makes a run of rows read as one group rather than as a stack of strips. It
-   is skipped on the first row, because a group is bounded by its container. */
+   The separator is a pseudo-element rather than a border so it can start at
+   the text edge, which is what makes a run of rows read as one group. */
 .list-row {
   position: relative;
 }
@@ -118,8 +103,7 @@ textarea {
   height: 0.5px;
   background-color: theme("colors.border");
 }
-/* Selection hides the separator above it, the way the platform does: the
-   tinted block is the boundary, and a rule across it would cut it in half. */
+/* Selection hides the separator above it: the tinted block is the boundary. */
 .list-row[data-selected="true"]::before,
 .list-row[data-selected="true"] + .list-row::before {
   display: none;
@@ -128,12 +112,8 @@ textarea {
 /* ── Motion ───────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Price flash. The animation is restarted by remounting the node with a new
-     key rather than by toggling a class from a timer, so no extra render or
-     cleanup is needed. The strength comes from the palette rather than being
-     fixed here: at a 500ms tick almost every row is mid-animation at any
-     moment, and the alpha that is a shimmer on white is a filled badge on
-     black. */
+  /* Price flash. The strength comes from the palette because the alpha that
+     is a shimmer on white is a filled badge on black. */
   @keyframes flash-up {
     0% {
       background-color: rgb(var(--c-up) / var(--flash-alpha));
@@ -157,10 +137,8 @@ textarea {
     animation: flash-down 500ms ease-out;
   }
 
-  /* Panels arrive in reading order on load: sidebar, then toolbar, then the
-     workspace left to right. One orchestrated moment, then the page is still.
-     The curve is the platform's own, so this settles like a system animation
-     rather than like a web page. */
+  /* Panels arrive in reading order on load: sidebar, toolbar, then the
+     workspace left to right. */
   @keyframes rise {
     from {
       opacity: 0;
@@ -178,9 +156,8 @@ textarea {
 
 /* ── Focus ────────────────────────────────────────────────────────────── */
 
-/* Keyboard focus stays visible everywhere, as the system blue halo rather
-   than a hard outline — including on the pill controls whose own ring the
-   border radius would clip. */
+/* Keyboard focus stays visible everywhere, including on the pill controls
+   whose own ring the border radius would clip. */
 :focus-visible {
   outline: 2px solid theme("colors.blue");
   outline-offset: 2px;
@@ -189,8 +166,7 @@ textarea {
 
 /* ── Scrollbars ───────────────────────────────────────────────────────── */
 
-/* Overlay scrollers: present while scrolling, invisible the rest of the time,
-   and never framing the panel they sit in. */
+/* Overlay scrollers: present while scrolling, invisible otherwise. */
 * {
   scrollbar-width: thin;
   scrollbar-color: theme("colors.border-strong") transparent;

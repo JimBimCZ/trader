@@ -1,9 +1,6 @@
 /**
- * Live price state.
- *
- * Kept in its own store so a 2Hz price tick cannot notify subscribers of the
- * portfolio, watchlist, or chat stores. Components select a single ticker,
- * so a component with no price dependency never re-renders from the stream.
+ * Live price state, kept in its own store so a 2Hz tick cannot notify
+ * subscribers of the portfolio, watchlist, or chat stores.
  */
 
 import { create } from "zustand";
@@ -20,8 +17,8 @@ export function normalize(raw: RawPriceUpdate): PriceSnapshot {
     previousPrice: raw.previous_price,
     sessionOpen: raw.session_open,
     timestamp: raw.timestamp,
-    // Read the daily field, never change_percent, which is tick-over-tick
-    // and sits near zero.
+    // The daily field, never change_percent, which is tick-over-tick and
+    // sits near zero.
     dailyChangePercent: raw.daily_change_percent,
     direction: raw.direction,
   };

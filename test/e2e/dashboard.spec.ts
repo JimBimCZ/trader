@@ -2,7 +2,6 @@ import { test, expect, waitForPrice } from "./fixtures";
 
 test.describe("Fresh start", () => {
   test("shows the default watchlist, $10k, and streaming prices", async ({ app }) => {
-    // All ten seeded tickers are present.
     for (const ticker of ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "JPM", "V", "NFLX"]) {
       await expect(app.getByTestId(`watchlist-row-${ticker}`)).toBeVisible();
     }

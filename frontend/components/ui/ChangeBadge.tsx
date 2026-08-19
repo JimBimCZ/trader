@@ -3,12 +3,8 @@
 import { directionGlyph, formatSignedPercent, toneClass, tonePillClass } from "@/lib/format";
 
 /**
- * A signed, glyphed percentage.
- *
- * The arrow and the explicit sign both carry the direction, so the meaning
- * survives without colour perception. `pill` tints the background as well —
- * the platform's capsule, for the places where the number is the row's
- * headline rather than one column among many.
+ * A signed, glyphed percentage — the arrow and sign carry the direction, so
+ * the meaning survives without colour perception.
  */
 export function ChangeBadge({
   value,

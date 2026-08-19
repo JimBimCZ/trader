@@ -1,5 +1,3 @@
-/** Typed calls for every endpoint, converting wire shapes to app shapes. */
-
 import { api } from "./client";
 import type {
   ChatMessage,

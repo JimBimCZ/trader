@@ -1,67 +1,42 @@
 /**
- * Design tokens, defined once — now in two appearances.
+ * Design tokens, defined once and emitted twice: as CSS custom properties for
+ * Tailwind, and as a plain object for the canvas and SVG charts, which need a
+ * concrete colour at draw time and cannot read a custom property.
  *
- * Two consumers need these values and they need them in different forms:
- * Tailwind resolves classes at build time, while the canvas and SVG charts
- * need a concrete colour string at draw time. A single static object could
- * serve both only while there was one appearance. With light and dark it
- * cannot, so the one source forks into two outputs instead of two sources:
+ * Colours are emitted as "R G B" channel triples, not hex, because Tailwind's
+ * alpha modifiers compose onto `rgb(var(--c-blue) / <alpha-value>)`.
  *
- *   palettes ──┬─→ themeStyleSheet()  →  :root custom properties  →  Tailwind
- *              └─→ useTheme().palette →  lightweight-charts, Recharts, SVG
- *
- * Every colour is emitted as an "R G B" channel triple rather than a hex
- * string, because Tailwind's alpha modifiers (`bg-blue/15`) compose onto
- * `rgb(var(--c-blue) / <alpha-value>)` and cannot compose onto a hex.
- *
- * The palette is Apple's system colour set, with one deliberate departure.
- * A system colour is chosen to look right, not to carry text: white on
- * systemGreen is 2.2:1 and systemGreen on white is 1.9:1, so a token that has
- * to do both jobs cannot do either well. Each direction colour therefore
- * splits three ways —
- *
- *   up       the vivid system colour, for anything that is not text:
- *            chart strokes, the flash tint, a status dot, a heatmap cell
- *   upFill   darkened until a white label on it clears 4.5:1, for buttons
- *   upText   darkened until it clears 4.5:1 *as* small text on a surface
- *
- * — and `__tests__/lib/theme.test.ts` holds every one of those pairings to
- * the line, in both appearances, so this cannot quietly drift.
+ * Each direction colour splits three ways: the vivid system colour for
+ * anything that is not text, `*Fill` darkened until white text on it clears
+ * 4.5:1, and `*Text` darkened until it clears 4.5:1 on a surface.
+ * `__tests__/lib/theme.test.ts` holds every pairing to that floor.
  */
 
 export type ColorToken = keyof typeof LIGHT_COLORS;
 
 const LIGHT_COLORS = {
-  // Surfaces. systemGroupedBackground under white cards: on Apple platforms
-  // the canvas is the grey and the content is the white, never the reverse.
   bg: "#F2F2F7",
   surface: "#FFFFFF",
   surfaceAlt: "#F7F7FA",
   surfaceSunk: "#EBEBF0",
-  // The base tint of the translucent chrome. It is never painted at full
-  // opacity — the sidebar and toolbar draw it through a backdrop blur.
+  // Never painted at full opacity — the sidebar and toolbar draw it through a
+  // backdrop blur.
   material: "#F6F6F8",
 
-  // Separators. Apple draws structure with hairlines, not with shadow.
   border: "#D8D8DC",
   borderStrong: "#C6C6C8",
 
-  // Label hierarchy. Apple's own secondaryLabel resolves to about 3.0:1,
-  // which this app's accessibility floor does not allow, so the muted tone is
-  // darkened until it clears 4.5:1 on both the card and the canvas.
   text: "#000000",
+  // Apple's own secondaryLabel resolves to about 3.0:1, so the muted tone is
+  // darkened until it clears 4.5:1 on both the card and the canvas.
   textMuted: "#5B5B60",
   textFaint: "#8E8E93",
 
-  // systemBlue: the interaction colour, and only that. Nothing directional is
-  // ever blue, and nothing interactive is ever green.
   blue: "#007AFF",
   blueFill: "#0071EB",
   blueText: "#0040DD",
   blueWash: "#E5F1FF",
 
-  // Direction. systemGreen and systemRed carry the direction; the *Text and
-  // *Fill variants carry the text.
   up: "#34C759",
   upFill: "#1F7F33",
   upText: "#1E7A32",
@@ -73,8 +48,6 @@ const LIGHT_COLORS = {
   flat: "#66666A",
   flatWash: "#EBEBF0",
 
-  // systemOrange, carrying the same fill/text/wash triplet, so the connecting
-  // state is built from tokens rather than a tint mixed in the component.
   yellow: "#FF9500",
   yellowText: "#A85700",
   yellowWash: "#FFF1E0",
@@ -83,13 +56,10 @@ const LIGHT_COLORS = {
   heatmapLossDeep: "#FF3B30",
   heatmapNeutral: "#C7C7CC",
 
-  /** The monogram colour inside an instrument chip. */
   instrumentInk: "#FFFFFF",
 } as const;
 
 const DARK_COLORS: Record<ColorToken, string> = {
-  // True black, not charcoal: it is what Apple ships, and it is what makes
-  // the elevated card read as a separate plane without a shadow to say so.
   bg: "#000000",
   surface: "#1C1C1E",
   surfaceAlt: "#242426",
@@ -127,19 +97,13 @@ const DARK_COLORS: Record<ColorToken, string> = {
   heatmapLossDeep: "#FF453A",
   heatmapNeutral: "#48484A",
 
-  // The dark chips are bright enough that near-black is the legible monogram.
   instrumentInk: "#0B0B0C",
 };
 
 /**
- * Instrument identity colours.
- *
- * With no logo assets, a symbol earns a stable colour instead. The hues sit
- * at a similar lightness so a full watchlist reads as one palette rather than
- * confetti, and each set is chosen against its own monogram ink: the light
- * hues are deep enough for white text, the dark ones bright enough for black.
- * None of them is systemGreen, systemRed, or systemBlue — those three are
- * spoken for.
+ * Instrument identity colours, standing in for logo assets. The light hues are
+ * deep enough to carry white monogram ink, the dark ones bright enough to
+ * carry near-black. None is systemBlue, systemGreen, or systemRed.
  */
 const LIGHT_INSTRUMENTS = [
   "#0A6EA8",
@@ -172,15 +136,10 @@ export type Appearance = "light" | "dark";
 export interface Palette {
   appearance: Appearance;
   colors: Record<ColorToken, string>;
-  /** Full CSS shadow strings — dark leans on hairlines, so its are lighter. */
   shadows: { card: string; pop: string };
   /**
-   * How strongly a price tick tints its cell.
-   *
-   * Not a colour but a property of one, and it cannot be a single number: the
-   * same alpha that is a shimmer on white is a filled badge on black. At a
-   * 500ms tick almost every row is mid-animation at any moment, so getting
-   * this wrong on one appearance makes the whole column strobe.
+   * How strongly a price tick tints its cell. The alpha that is a shimmer on
+   * white is a filled badge on black, so it cannot be one number.
    */
   flashAlpha: number;
   instruments: readonly string[];
@@ -220,12 +179,7 @@ function channels(hex: string): string {
 
 const TOKENS = Object.keys(LIGHT_COLORS) as ColorToken[];
 
-/**
- * The colour map Tailwind is configured with.
- *
- * Derived from the token list rather than restated, so adding a colour to the
- * palette is one edit rather than three that can disagree.
- */
+/** The colour map Tailwind is configured with. */
 export function tailwindColors(): Record<string, string> {
   return Object.fromEntries(
     TOKENS.map((token) => [kebab(token), `rgb(var(--c-${kebab(token)}) / <alpha-value>)`]),
@@ -242,23 +196,16 @@ function block(selector: string, palette: Palette): string {
 }
 
 /**
- * Both appearances, as one stylesheet.
- *
- * Emitted into the document head at build time rather than hand-written in
- * `globals.css`, because a CSS file cannot import this module and a hand-kept
- * copy of thirty colours is a copy that drifts. `data-theme` is stamped on the
- * root element before first paint, so no rule here is ever applied late.
+ * Both appearances, as one stylesheet injected into the document head. A CSS
+ * file cannot import this module, and a hand-kept copy of thirty colours
+ * drifts.
  */
 export function themeStyleSheet(): string {
   return [block(":root", palettes.light), block(':root[data-theme="dark"]', palettes.dark)].join("");
 }
 
-/**
- * Same symbol, same colour, every render and every panel.
- *
- * Cached because four components ask for it on every price tick, and the
- * answer for a given symbol and appearance never changes.
- */
+// Four components ask for an instrument colour on every price tick, and the
+// answer for a given symbol and appearance never changes.
 const colorCache = new Map<string, string>();
 
 export function instrumentColor(ticker: string, appearance: Appearance = "light"): string {
@@ -277,12 +224,8 @@ export function instrumentColor(ticker: string, appearance: Appearance = "light"
 }
 
 /**
- * Corner radii.
- *
- * Larger than the platform-neutral defaults because Apple's corners are
- * continuous: an ordinary circular corner at the same radius reads tighter
- * than the squircle it stands in for. Where the browser supports
- * `corner-shape`, `globals.css` upgrades these to the real curve.
+ * Larger than platform-neutral defaults because Apple's corners are
+ * continuous; `globals.css` upgrades these to `corner-shape` where supported.
  */
 export const radii = {
   control: "10px",

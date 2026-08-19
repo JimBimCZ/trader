@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pnlToColor, pnlOpacity } from "@/components/portfolio/PortfolioHeatmap";
 import { palettes } from "@/lib/theme";
 
-/**
- * The colour scale is the risky logic here, not Recharts' rendering, so it is
- * exported and tested directly. It takes a palette, so the same scale is
- * asserted against the appearance it is drawing for.
- */
+/** The colour scale is the risky logic here, not Recharts' rendering. */
 const { colors } = palettes.light;
 
 describe("pnlToColor", () => {

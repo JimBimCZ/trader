@@ -81,7 +81,6 @@ class Database:
             await self._conn.commit()
 
     async def is_healthy(self) -> bool:
-        """True if the database answers a trivial query."""
         try:
             await self.fetch_one("SELECT 1")
         except Exception:

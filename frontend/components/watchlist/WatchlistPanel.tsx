@@ -35,8 +35,7 @@ export function WatchlistPanel() {
         </span>
       </header>
 
-      {/* A grouped inset list: no padding between the rows, so the inset
-          separators are what divide them. */}
+      {/* No padding between rows, so the inset separators are what divide them. */}
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="watchlist">
         {tickers.map((ticker) => (
           <WatchlistRow key={ticker} ticker={ticker} />

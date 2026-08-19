@@ -1,7 +1,5 @@
 "use client";
 
-/** Portfolio state, refreshed from REST after every mutation. */
-
 import { create } from "zustand";
 import { executeTrade, fetchPortfolio, fetchPortfolioHistory } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";

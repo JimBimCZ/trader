@@ -2,14 +2,9 @@ import { describe, expect, it } from "vitest";
 import { palettes, instrumentColor, themeStyleSheet, type Palette } from "@/lib/theme";
 
 /**
- * The accessibility floor, enforced rather than asserted in a comment.
- *
- * §10's rule is that colour is never the only encoding and that every
- * coloured value stays legible. Two appearances doubles the number of
- * foreground/background pairings, and the ones that fail are never the ones
- * anyone remembers to check by eye — systemGreen on white is 1.9:1, which is
- * precisely why the palette carries a separate text-safe variant. This pins
- * that so a future palette edit cannot quietly drop below the line.
+ * The 4.5:1 accessibility floor, enforced rather than asserted in a comment.
+ * systemGreen on white is 1.9:1, which is why the palette carries separate
+ * text-safe variants.
  */
 function luminance(hex: string): number {
   const channel = (offset: number) => {
@@ -68,7 +63,7 @@ describe("instrumentColor", () => {
 
   it("answers from the appearance it was asked about", () => {
     // The light hues are deep enough for white ink and the dark ones bright
-    // enough for black, so a symbol cannot wear one set in the other's mode.
+    // enough for black.
     expect(palettes.light.instruments).toContain(instrumentColor("AAPL", "light"));
     expect(palettes.dark.instruments).toContain(instrumentColor("AAPL", "dark"));
   });

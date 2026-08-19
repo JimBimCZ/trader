@@ -31,7 +31,6 @@ class HistoryCollector:
         logger.info("History collector started")
 
     async def stop(self) -> None:
-        """Stop collecting. Safe to call more than once."""
         if self._task and not self._task.done():
             self._task.cancel()
             try:

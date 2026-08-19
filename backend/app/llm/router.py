@@ -28,6 +28,5 @@ async def get_history(
 
 @router.post("")
 async def send_message(body: ChatRequest, service: ChatServiceDep) -> dict:
-    """Send a message and get the assistant's reply plus any executed actions."""
     reply = await service.send_message(body.message)
     return reply.to_dict()

@@ -4,13 +4,6 @@ import { useTheme, type ThemeMode } from "@/lib/useTheme";
 import { SegmentedControl } from "./Segmented";
 import { DisplayIcon, MoonIcon, SunIcon } from "./icons";
 
-/**
- * Light, dark, or whatever the machine says.
- *
- * `system` is a first-class third choice rather than the absence of a choice,
- * because on Apple platforms it is the default and it keeps tracking the OS
- * after the fact — the store's media listener is what honours that.
- */
 const OPTIONS = [
   { value: "light", label: "Light appearance", icon: <SunIcon /> },
   { value: "dark", label: "Dark appearance", icon: <MoonIcon /> },

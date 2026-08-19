@@ -17,18 +17,16 @@ import { SignedValue } from "../ui/SignedValue";
 import { CHART_MIN_H } from "../layout/panels";
 
 /**
- * Whole dollars are unreadable when the whole series spans a few dollars —
- * every tick renders as the same number — so the precision follows the range.
+ * Whole dollars are unreadable when the series spans a few dollars — every
+ * tick renders as the same number — so the precision follows the range.
  */
 function axisFormatter(range: number) {
   return (value: number) => (range < 50 ? formatPrice(value) : formatCompact(value));
 }
 
 /**
- * Total portfolio value over time.
- *
- * Snapshots arrive every 30 seconds, so this is declarative SVG rather than
- * canvas — there is no update-rate problem to solve here.
+ * Total portfolio value over time. Snapshots arrive every 30 seconds, so this
+ * is declarative SVG rather than canvas.
  */
 export function PnlChart() {
   const { colors, shadows } = usePalette();

@@ -28,7 +28,6 @@ def canonicalize_ticker(ticker: str) -> str:
 
 
 def is_valid_ticker(ticker: str) -> bool:
-    """True if the ticker is valid once canonicalized."""
     return bool(TICKER_PATTERN.match(canonicalize_ticker(ticker)))
 
 

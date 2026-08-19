@@ -1,8 +1,6 @@
 /**
- * Fetch wrapper that understands the API's single error envelope.
- *
- * Every route returns {"error": {"code", "message"}} on failure, so callers
- * can branch on a stable code instead of string-matching a message.
+ * Fetch wrapper that understands the API's single error envelope:
+ * {"error": {"code", "message"}} on every failure.
  */
 
 export class ApiError extends Error {

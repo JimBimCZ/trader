@@ -1,11 +1,7 @@
 /**
- * Valuing the portfolio against the live stream.
- *
- * The header, the positions table, and the heatmap all answer the same
- * question twice a second — what is this holding worth right now, and how far
- * is it from its cost? That is a portfolio rule, not a rendering one, so it
- * lives here where it can be tested without React and cannot drift between the
- * three panels that display it.
+ * Valuing the portfolio against the live stream. The header, the positions
+ * table, and the heatmap all answer this twice a second, so the rule lives
+ * here rather than in three components that can drift.
  */
 
 import type { Position, PriceSnapshot } from "./types";
@@ -19,7 +15,6 @@ export interface Holding {
   value: number;
   costBasis: number;
   pnl: number;
-  /** Return since acquisition, in percent. */
   pctChange: number;
 }
 
@@ -30,7 +25,6 @@ export interface Valuation {
   costBasis: number;
   unrealized: number;
   unrealizedPercent: number;
-  /** Positions plus uninvested cash. */
   totalValue: number;
 }
 
@@ -38,8 +32,6 @@ export function valueHolding(
   position: Position,
   prices: Record<string, PriceSnapshot>,
 ): Holding {
-  // Prefer the live price so the panels move with the stream between the
-  // portfolio's slower REST refreshes.
   const price = prices[position.ticker]?.price ?? position.currentPrice;
   const value = position.quantity * price;
   const costBasis = position.quantity * position.avgCost;

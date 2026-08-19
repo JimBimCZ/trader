@@ -40,7 +40,6 @@ class ChatService:
         self._settings = settings
 
     async def list_history(self, limit: int = 50) -> list[ChatMessage]:
-        """Stored conversation, oldest first."""
         return await self._repo.list_recent(limit=limit)
 
     async def send_message(self, user_message: str) -> ChatReply:

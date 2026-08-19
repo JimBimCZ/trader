@@ -1,6 +1,5 @@
 "use client";
 
-/** The dismiss mark, shared by the watchlist row and the assistant panel. */
 export function CloseIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
@@ -9,12 +8,7 @@ export function CloseIcon({ className = "h-3.5 w-3.5" }: { className?: string })
   );
 }
 
-/**
- * The appearance glyphs.
- *
- * Drawn from one stroke width and one cap style so the three read as a set
- * inside the segmented control, the way SF Symbols do.
- */
+// One stroke width and one cap style, so the appearance glyphs read as a set.
 const stroke = {
   fill: "none",
   stroke: "currentColor",
@@ -40,7 +34,6 @@ export function MoonIcon({ className = "h-3.5 w-3.5" }: { className?: string }) 
   );
 }
 
-/** System appearance: a display, because the choice belongs to the machine. */
 export function DisplayIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">

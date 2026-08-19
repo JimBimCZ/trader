@@ -26,7 +26,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   send: async (text) => {
-    // Show the user's own message at once; the assistant's reply follows.
     const pending: ChatMessage = {
       id: nextLocalId(),
       role: "user",

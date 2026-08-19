@@ -8,8 +8,7 @@ export const metadata: Metadata = {
   description: "Live market data, a simulated portfolio, and an AI copilot.",
 };
 
-// Both appearances are declared, so Safari tints its own chrome to match
-// whichever one the viewer is in.
+// Both appearances are declared, so Safari tints its own chrome to match.
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F2F2F7" },
@@ -18,13 +17,9 @@ export const viewport: Viewport = {
 };
 
 /**
- * Resolves the appearance before the first paint.
- *
- * The pages are prerendered as static HTML, so without this a viewer in dark
- * mode gets a white flash while React boots. It runs synchronously in the
- * head, ahead of any styled element existing, and writes the same attributes
- * the theme store maintains afterwards — the store's `hydrate` then adopts
- * what this already decided rather than deciding again.
+ * Resolves the appearance before the first paint. The pages are prerendered,
+ * so without this a viewer in dark mode gets a white flash while React boots.
+ * The theme store adopts what this decided rather than deciding again.
  */
 const PREPAINT = `(function(){try{
 var m=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})||"system";
@@ -36,9 +31,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* The palette, emitted from `lib/theme.ts` rather than hand-copied
-            into a stylesheet, so the tokens have one source and cannot drift
-            between what Tailwind compiles and what the charts draw with. */}
         <style id="theme-tokens" dangerouslySetInnerHTML={{ __html: themeStyleSheet() }} />
         <script dangerouslySetInnerHTML={{ __html: PREPAINT }} />
       </head>

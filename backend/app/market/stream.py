@@ -16,8 +16,7 @@ from .cache import PriceCache
 logger = logging.getLogger(__name__)
 
 #: Emitted when the cache has not changed, to keep idle proxies from dropping
-#: a connection that is legitimately quiet. SSE comment frames are ignored by
-#: EventSource but still count as traffic.
+#: a quiet connection. EventSource ignores comment frames.
 _KEEPALIVE_FRAME = ": keepalive\n\n"
 
 #: Seconds without an emitted event before a keepalive comment is sent.
@@ -25,27 +24,19 @@ _KEEPALIVE_INTERVAL = 15.0
 
 
 def create_stream_router(price_cache: PriceCache) -> APIRouter:
-    """Create the SSE streaming router with a reference to the price cache.
+    """Build the SSE router bound to this cache.
 
-    The router is constructed here rather than at module scope so that each
-    call returns an independent router bound to its own cache. A shared
-    module-level router would accumulate duplicate routes across calls and the
-    first closure's cache would win — which breaks any test fixture that
-    builds more than one app.
+    Constructed per call rather than at module scope: a shared module-level
+    router would accumulate duplicate routes and the first closure's cache
+    would win, breaking any fixture that builds more than one app.
     """
     router = APIRouter(prefix="/api/stream", tags=["streaming"])
 
     @router.get("/prices")
     async def stream_prices(request: Request) -> StreamingResponse:
-        """SSE endpoint for live price updates.
+        """Streams every tracked price as one event, at the cache's cadence:
 
-        Streams all tracked ticker prices every ~500ms. The client connects
-        with EventSource and receives events in the format:
-
-            data: {"AAPL": {"ticker": "AAPL", "price": 190.50, ...}, ...}
-
-        Includes a retry directive so the browser auto-reconnects on
-        disconnection (EventSource built-in behavior).
+        data: {"AAPL": {"ticker": "AAPL", "price": 190.50, ...}, ...}
         """
         return StreamingResponse(
             _generate_events(price_cache, request),
@@ -65,12 +56,8 @@ async def _generate_events(
     request: Request,
     interval: float = 0.5,
 ) -> AsyncGenerator[str, None]:
-    """Async generator that yields SSE-formatted price events.
-
-    Sends all prices every `interval` seconds. Stops when the client
-    disconnects (detected via request.is_disconnected()).
-    """
-    # Tell the client to retry after 1 second if the connection drops
+    """Yields SSE frames until the client disconnects."""
+    # Tell the client to retry after 1 second if the connection drops.
     yield "retry: 1000\n\n"
 
     last_version = -1
@@ -80,7 +67,6 @@ async def _generate_events(
 
     try:
         while True:
-            # Check for client disconnect
             if await request.is_disconnected():
                 logger.info("SSE client disconnected: %s", client_ip)
                 break

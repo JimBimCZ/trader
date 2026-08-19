@@ -5,15 +5,9 @@ import type { ButtonHTMLAttributes } from "react";
 type Variant = "prominent" | "buy" | "sell" | "tinted" | "gray" | "plain";
 
 /**
- * The platform's button set.
- *
- * Apple distinguishes buttons by fill weight rather than by shape: prominent
- * actions are filled with a system colour, secondary ones take that colour as
- * a tint, and everything else is grey or bare. Blue is the interaction fill —
- * green and red are reserved for buy and sell, which are the only two places
- * in the app where the direction colours name an action rather than a number.
- *
- * Pressed state dims rather than scales, which is the platform's own feedback.
+ * The platform's button set, distinguished by fill weight rather than shape.
+ * Blue is the interaction fill; green and red are reserved for buy and sell,
+ * the only two places where a direction colour names an action.
  */
 const VARIANTS: Record<Variant, string> = {
   prominent: "bg-blue-fill text-white hover:brightness-110",

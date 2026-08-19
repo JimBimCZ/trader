@@ -18,7 +18,6 @@ class TestSimulatorDataSource:
         source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
         await source.start(["AAPL", "GOOGL"])
 
-        # Cache should have seed prices immediately (before first loop tick)
         assert cache.get("AAPL") is not None
         assert cache.get("GOOGL") is not None
 
@@ -33,7 +32,6 @@ class TestSimulatorDataSource:
         initial_version = cache.version
         await asyncio.sleep(0.3)  # Several update cycles
 
-        # Version should have incremented (prices updated)
         assert cache.version > initial_version
 
         await source.stop()
@@ -44,7 +42,6 @@ class TestSimulatorDataSource:
         source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
         await source.start(["AAPL"])
         await source.stop()
-        # Double stop should not raise
         await source.stop()
 
     async def test_add_ticker(self):
@@ -98,13 +95,10 @@ class TestSimulatorDataSource:
         cache = PriceCache()
         source = SimulatorDataSource(price_cache=cache, update_interval=0.05)
 
-        # Start with a valid ticker
         await source.start(["AAPL"])
 
-        # Wait for some updates
         await asyncio.sleep(0.15)
 
-        # Task should still be running
         assert source._task is not None
         assert not source._task.done()
 
@@ -119,7 +113,6 @@ class TestSimulatorDataSource:
         initial_version = cache.version
         await asyncio.sleep(0.05)  # Should get ~5 updates
 
-        # Should have multiple updates with fast interval
         assert cache.version > initial_version + 2
 
         await source.stop()
@@ -127,11 +120,9 @@ class TestSimulatorDataSource:
     async def test_custom_event_probability(self):
         """Test creating source with custom event probability."""
         cache = PriceCache()
-        # Very high event probability for testing
         source = SimulatorDataSource(price_cache=cache, update_interval=0.1, event_probability=1.0)
         await source.start(["AAPL"])
 
-        # Just verify it starts and stops cleanly
         await asyncio.sleep(0.2)
         await source.stop()
 

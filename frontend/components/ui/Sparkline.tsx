@@ -4,14 +4,9 @@ import { useId, useMemo } from "react";
 import { usePriceStore } from "@/lib/stream/priceStore";
 import { usePalette } from "@/lib/useTheme";
 
-/**
- * A hand-drawn SVG area.
- *
- * A charting library instance per row would carry its own observers and
- * render loop; at 25 rows that overhead buys nothing for a line with no axes,
- * labels, or interaction. The fill under the line is what makes it read as a
- * chart rather than a scribble at this size.
- */
+// A charting library instance per row would carry its own observers and
+// render loop; at 25 rows that buys nothing for a line with no axes or
+// interaction.
 const WIDTH = 52;
 const HEIGHT = 26;
 

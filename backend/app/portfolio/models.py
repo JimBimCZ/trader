@@ -83,8 +83,6 @@ class PortfolioSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class PortfolioView:
-    """The full portfolio response."""
-
     cash_balance: float
     positions: list[ValuedPosition]
     positions_value: float
@@ -103,8 +101,6 @@ class PortfolioView:
 
 @dataclass(frozen=True, slots=True)
 class TradeResult:
-    """The outcome of a single executed trade."""
-
     trade: Trade
     cash_balance: float
     position: Position | None

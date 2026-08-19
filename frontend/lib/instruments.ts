@@ -1,10 +1,6 @@
 /**
- * Company names for the symbols the app ships with.
- *
- * A row that reads "AAPL · Apple Inc." is the difference between a terminal
- * and a consumer app. There is no names endpoint, so this covers the seed
- * watchlist plus the large caps a user is most likely to type; anything else
- * simply renders without a subtitle rather than with a placeholder.
+ * Company names for the symbols the app ships with. There is no names
+ * endpoint, so anything outside this map renders without a subtitle.
  */
 const NAMES: Record<string, string> = {
   AAPL: "Apple",
@@ -41,5 +37,4 @@ const NAMES: Record<string, string> = {
 
 export const instrumentName = (ticker: string): string | null => NAMES[ticker] ?? null;
 
-/** The one or two letters shown on an instrument chip. */
 export const instrumentMonogram = (ticker: string): string => ticker.slice(0, 2);

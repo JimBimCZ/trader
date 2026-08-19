@@ -63,7 +63,6 @@ class TestMassiveDataSource:
         with patch.object(source, "_fetch_snapshots", return_value=[good_snap, bad_snap]):
             await source._poll_once()
 
-        # Good ticker processed, bad one skipped
         assert cache.get_price("AAPL") == 190.50
         assert cache.get_price("BAD") is None
 
@@ -153,7 +152,6 @@ class TestMassiveDataSource:
         source = MassiveDataSource(api_key="test-key", price_cache=cache)
         source._tickers = []
 
-        # Should not call _fetch_snapshots
         with patch.object(source, "_fetch_snapshots") as mock_fetch:
             await source._poll_once()
             mock_fetch.assert_not_called()
@@ -171,16 +169,13 @@ class TestMassiveDataSource:
         cache = PriceCache()
         source = MassiveDataSource(api_key="test-key", price_cache=cache, poll_interval=10.0)
 
-        # Mock the client and start
         with patch("app.market.massive_client.RESTClient"):
             with patch.object(source, "_fetch_snapshots", return_value=[]):
                 await source.start(["AAPL"])
 
-        # Verify task is running
         assert source._task is not None
         assert not source._task.done()
 
-        # Stop and verify task is cancelled
         await source.stop()
         assert source._task is None
 
@@ -195,7 +190,6 @@ class TestMassiveDataSource:
             with patch.object(source, "_fetch_snapshots", return_value=mock_snapshots):
                 await source.start(["AAPL"])
 
-        # Cache should have data immediately from the first poll
         assert cache.get_price("AAPL") == 190.50
 
         await source.stop()

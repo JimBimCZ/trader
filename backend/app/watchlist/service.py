@@ -40,11 +40,9 @@ class WatchlistService:
         return self._cap
 
     async def list(self) -> list[str]:
-        """Watched tickers, oldest first."""
         return await self._repo.list()
 
     async def add(self, raw_ticker: str) -> list[str]:
-        """Add a ticker. Idempotent; returns the resulting watchlist."""
         ticker = validate_ticker(raw_ticker)
         async with self._lock:
             if await self._repo.contains(ticker):

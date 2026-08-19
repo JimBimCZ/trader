@@ -12,26 +12,11 @@ import { ChangeBadge } from "../ui/ChangeBadge";
 import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { PANELS } from "../layout/panels";
 
-/**
- * The one value in the header that moves with the stream.
- *
- * Isolated so a 2Hz price tick reconciles a single badge rather than the whole
- * chart section — the canvas below is driven by a store subscription and has
- * no reason to be re-rendered at all.
- */
 const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
   const dailyChange = usePriceStore((s) => s.prices[ticker]?.dailyChangePercent ?? 0);
   return <ChangeBadge value={dailyChange} pill />;
 });
 
-/**
- * The detailed price chart for the selected ticker.
- *
- * Live ticks are pushed straight into the series from a store subscription
- * rather than through React state: this is the one path hot enough that going
- * through reconciliation twice a second would be wasteful. Everything else in
- * the app stays declarative.
- */
 export function MainChart({ ticker }: { ticker: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { appearance, colors } = usePalette();
@@ -40,8 +25,7 @@ export function MainChart({ ticker }: { ticker: string | null }) {
     if (!containerRef.current || !ticker) return;
 
     // A canvas font string cannot name a font stack the way CSS can, so the
-    // resolved family is read off the document once per mount — which is also
-    // how the chart ends up lettered in SF on the machines that have it.
+    // resolved family is read off the document once per mount.
     const bodyFont = getComputedStyle(document.body).fontFamily || "system-ui";
 
     const chart = createChart(containerRef.current, {
@@ -51,8 +35,6 @@ export function MainChart({ ticker }: { ticker: string | null }) {
         fontFamily: `${bodyFont}, system-ui, sans-serif`,
       },
       grid: {
-        // Only the horizontal rules survive: price levels are what a reader
-        // measures against, and the vertical grid was just noise.
         vertLines: { visible: false },
         horzLines: { color: colors.border },
       },
@@ -61,9 +43,8 @@ export function MainChart({ ticker }: { ticker: string | null }) {
         borderVisible: false,
         timeVisible: true,
         secondsVisible: true,
-        // The series is keyed by UTC seconds, which the axis would label in
-        // UTC — putting a different clock on this chart than on the portfolio
-        // chart beside it. Both now read the viewer's local time.
+        // The series is keyed by UTC seconds, which the axis would otherwise
+        // label in UTC — a different clock from the portfolio chart beside it.
         tickMarkFormatter: formatClockSeconds,
       },
       localization: { timeFormatter: formatClockSeconds },
@@ -71,9 +52,8 @@ export function MainChart({ ticker }: { ticker: string | null }) {
       autoSize: true,
     });
 
-    // The line wears the instrument's own colour, the same one on its chip in
-    // the watchlist — so selecting a ticker recolours the chart to match the
-    // row you clicked, and green stays reserved for "up".
+    // Selecting a ticker recolours the chart to match the row that was
+    // clicked, and green stays reserved for "up".
     const tint = instrumentColor(ticker, appearance);
     const series = chart.addAreaSeries({
       lineColor: tint,
@@ -86,16 +66,14 @@ export function MainChart({ ticker }: { ticker: string | null }) {
     let cancelled = false;
     let lastTime = 0;
 
-    // Seed from the server ring buffer so the chart has shape immediately
-    // rather than drawing itself over the next few seconds.
+    // Seed from the server ring buffer so the chart has shape immediately.
     fetchHistory(ticker)
       .then((points) => {
         if (cancelled || points.length === 0) return;
 
         // The buffer ticks twice a second but the series is keyed by whole
-        // seconds, so collapse each second to its latest price. Passing the
-        // raw points would hand the series duplicate timestamps, which it
-        // rejects outright — taking the whole chart down with it.
+        // seconds. Duplicate timestamps are rejected outright by the series,
+        // so collapse each second to its latest price.
         const bySecond = new Map<number, number>();
         for (const point of points) {
           bySecond.set(Math.floor(point.timestamp), point.price);
@@ -117,9 +95,8 @@ export function MainChart({ ticker }: { ticker: string | null }) {
       (snapshot) => {
         if (!snapshot) return;
         const time = Math.floor(snapshot.timestamp);
-        // Updating at or after the last point is fine — an equal timestamp
-        // replaces that second's value. Going backwards is not, and would
-        // throw, so it is dropped.
+        // An equal timestamp replaces that second's value; going backwards
+        // would throw, so it is dropped.
         if (time < lastTime) return;
         lastTime = time;
         try {
@@ -135,8 +112,8 @@ export function MainChart({ ticker }: { ticker: string | null }) {
       unsubscribe();
       chart.remove();
     };
-    // The palette is a dependency, not a detail: the canvas holds its colours
-    // rather than reading them, so switching appearance has to rebuild it.
+    // The canvas holds its colours rather than reading them, so switching
+    // appearance has to rebuild it.
   }, [ticker, appearance, colors]);
 
   const shell = `rise card flex ${PANELS.chart.minH} flex-1 flex-col lg:min-h-0`;

@@ -67,7 +67,6 @@ class TradeService:
         return {ticker: update.price for ticker, update in self._prices.get_all().items()}
 
     async def get_portfolio(self) -> PortfolioView:
-        """Current cash, positions priced live, and totals."""
         cash = round_cash(await self._users.get_cash())
         positions = await self._positions.list()
         prices = self._price_map()
@@ -92,7 +91,6 @@ class TradeService:
         return await self._snapshots.list(limit=limit)
 
     async def current_total_value(self) -> float:
-        """Total portfolio value, for the snapshot writer."""
         cash = await self._users.get_cash()
         positions = await self._positions.list()
         return total_value(round_cash(cash), positions, self._price_map())
@@ -203,7 +201,6 @@ class TradeService:
         return total
 
     async def prune_snapshots(self, retention_days: int) -> int:
-        """Delete snapshots older than the retention window."""
         cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         async with self._lock:
             async with self._db.transaction():
