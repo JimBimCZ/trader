@@ -22,14 +22,16 @@ class TestSearchPath:
             await db.initialize_schema()
             row = await db.fetch_one(
                 "SELECT table_schema FROM information_schema.tables "
-                "WHERE table_name = 'users_profile'"
+                "WHERE table_name = 'users_profile' AND table_schema = current_schema()"
             )
             assert row["table_schema"] == schema
         finally:
             await db.close()
             admin = await asyncpg.connect(normalize_dsn(TEST_DSN))
-            await admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-            await admin.close()
+            try:
+                await admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            finally:
+                await admin.close()
 
     async def test_no_search_path_uses_the_default_schema(self):
         db = await PostgresDatabase.connect(TEST_DSN)
