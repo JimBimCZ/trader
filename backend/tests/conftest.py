@@ -86,6 +86,16 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
 
     Returns the names actually dropped, so callers (and tests) can assert on
     what happened rather than just on "it didn't crash".
+
+    Scoping hazard: this sweeps every `test_*` schema in the target database,
+    not just ones this session created. It runs autouse and session-scoped
+    (see `_cleanup_orphaned_test_schemas` below), and two tests in
+    tests/db/test_schema_cleanup.py also call it directly mid-run. Fine under
+    one pytest session at a time -- which is the only way this suite runs
+    today -- but two concurrent sessions against the same database (two
+    terminals, or pytest-xdist if it is ever added) would each drop the
+    other's live schemas out from under it. Not fixed here; flagged so it
+    isn't rediscovered as a mystery "relation does not exist" failure.
     """
     admin = await asyncpg.connect(normalize_dsn(dsn))
     try:
@@ -97,8 +107,11 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
     finally:
         await admin.close()
 
-    # Dropped through _drop_schema, not inline, so this goes through the same
-    # chokepoint guard as every other schema this suite deletes.
+    # Dropped through _drop_schema, not inline, so each name is re-checked
+    # against its guard before the DROP runs -- not "the same chokepoint every
+    # schema in this suite goes through": test_schema_cleanup.py's lookalike
+    # names (test_short, test_GGGGGGGGGGGG, ...) are deliberately shaped to
+    # fail _DROPPABLE_SCHEMA_RE and so cannot route through here either.
     for name in matches:
         await _drop_schema(dsn, name)
     return matches

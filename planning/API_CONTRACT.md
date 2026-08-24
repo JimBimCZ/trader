@@ -320,7 +320,8 @@ It never needs a separate error path for chat. Request timeout is 30 seconds wit
 }
 ```
 
-`status` is `"ok"` or `"degraded"`. `market_source` is `"simulator"` or `"massive"`.
+`status` is `"ok"` or `"degraded"`. `market_source` is `"simulator"`, `"massive"`, or
+`"deterministic"` (a serverless deployment with no background task to tick a stateful simulator).
 `seconds_since_last_tick` is `null` before the first tick. E2E waits on this instead of sleeping.
 
 ### `POST /api/reset`

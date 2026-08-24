@@ -157,9 +157,14 @@ class TestDropSchemaRefusesNonTestSchemas:
     unconditionally, because the guard lived only in the sweep's selection
     query -- nothing stopped a caller downstream of that from handing an
     arbitrary name straight to a DROP statement. The fix moves the guard
-    into `_drop_schema` itself, the one place every schema-dropping code
-    path in this file funnels through, so no caller -- present or future --
-    can point it at a non-test schema.
+    into `_drop_schema`, so any caller that goes through it -- present or
+    future -- is refused a non-test schema. `test_sweep_never_touches_
+    public_or_a_lookalike_schema` above still tears its own lookalike
+    schemas (`test_short`, `test_GGGGGGGGGGGG`, ...) down with a raw admin
+    connection rather than through `_drop_schema` -- not an oversight this
+    fix left behind, but by design: those names are exactly the shapes
+    `_DROPPABLE_SCHEMA_RE` exists to reject, so `_drop_schema` would refuse
+    to drop them.
     """
 
     async def test_refuses_to_drop_public(self):

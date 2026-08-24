@@ -4,8 +4,5 @@ frontend/node_modules
 frontend/out
 frontend/.next
 test/node_modules
-db/*.db
-db/*.db-wal
-db/*.db-shm
 .playwright-mcp
 **/__pycache__

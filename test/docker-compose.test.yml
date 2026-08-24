@@ -10,7 +10,11 @@ services:
       POSTGRES_USER: trader
       POSTGRES_PASSWORD: trader
       POSTGRES_DB: trader
-    # No volume: a throwaway database per run, so tests never inherit state.
+    # No named volume, so a container removed with `down` starts clean. But
+    # `up -d` reuses an existing `trader-e2e-db` container (and its writable
+    # layer) when the config hasn't changed, so a run without an intervening
+    # `down` can inherit state — neutralized by test/e2e/fixtures.ts posting
+    # /api/reset before each test, not by anything here.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trader -d trader"]
       interval: 3s
