@@ -20,10 +20,18 @@ from app.market import PriceCache
 
 TEST_DSN = os.environ.get("TEST_DATABASE_URL", "postgresql://trader:trader@localhost:5432/trader")
 
-#: The exact shape `db_schema` below hands out. The session-scoped sweep relies
-#: on this to recognize its own throwaway schemas and nothing else -- it must
-#: never be loose enough to match "public" or an application schema.
-_TEST_SCHEMA_RE = re.compile(r"^test_[0-9a-f]{12}$")
+#: Every shape this suite actually generates: `db_schema` below (`test_<12
+#: hex>`) and test_search_path.py's probes (`probe_<8 hex>`). The
+#: session-scoped sweep matches against this to recognize its own throwaway
+#: schemas and nothing else -- it must never be loose enough to match "public"
+#: or an application schema.
+#:
+#: Deliberately stricter than `_DROPPABLE_SCHEMA_RE` below, and not
+#: interchangeable with it: this one pins each prefix to its exact generated
+#: width, so the near-miss names test_schema_cleanup.py creates to prove the
+#: sweep leaves them alone (notably `test_` + `a` * 13, which the looser
+#: pattern does match) stay unmatched here.
+_SWEEP_SCHEMA_RE = re.compile(r"^(test_[0-9a-f]{12}|probe_[0-9a-f]{8})$")
 
 #: Every disposable schema name this suite generates: `db_schema` below
 #: (`test_<12 hex>`) and `test_search_path.py`'s hand-rolled probes
@@ -75,11 +83,11 @@ async def _provisioned_schema(dsn: str, schema: str) -> AsyncIterator[PostgresDa
 
 
 async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
-    """Drop every `test_*` schema matching the fixture-generated pattern.
+    """Drop every `test_*` / `probe_*` schema matching a generated pattern.
 
     Guarded three times over: the SQL only selects names starting with
-    `test_`; the Python-side `_TEST_SCHEMA_RE` re-checks the full
-    `test_<12 hex chars>` shape before a name is even considered a match; and
+    `test_` or `probe_`; the Python-side `_SWEEP_SCHEMA_RE` re-checks the
+    full generated shape before a name is even considered a match; and
     the actual DROP runs through `_drop_schema`, which re-validates against
     its own (slightly looser, to also cover `probe_*`) pattern. No single
     layer failing can turn this into a `DROP SCHEMA public`.
@@ -101,9 +109,10 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
     try:
         rows = await admin.fetch(
             r"SELECT schema_name FROM information_schema.schemata "
-            r"WHERE schema_name LIKE 'test\_%' ESCAPE '\'"
+            r"WHERE schema_name LIKE 'test\_%' ESCAPE '\' "
+            r"   OR schema_name LIKE 'probe\_%' ESCAPE '\'"
         )
-        matches = [row["schema_name"] for row in rows if _TEST_SCHEMA_RE.match(row["schema_name"])]
+        matches = [row["schema_name"] for row in rows if _SWEEP_SCHEMA_RE.match(row["schema_name"])]
     finally:
         await admin.close()
 
@@ -114,7 +123,7 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
     # most of those names (test_short, test_GGGGGGGGGGGG, testing_...) fail
     # _DROPPABLE_SCHEMA_RE and _drop_schema would refuse them. Careful: the two
     # patterns are not the same test. The lookalikes are built to miss
-    # _TEST_SCHEMA_RE, the sweep's selector above, and "test_" + "a" * 13
+    # _SWEEP_SCHEMA_RE, the sweep's selector above, and "test_" + "a" * 13
     # misses it on length while still matching the looser
     # _DROPPABLE_SCHEMA_RE -- so that one _drop_schema would happily drop.
     for name in matches:

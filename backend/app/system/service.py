@@ -80,6 +80,16 @@ class ResetService:
     async def reset(self) -> None:
         """Wipe user state, re-seed, and resync the tracked-ticker set."""
         async with self._trade_lock, self._watchlist_lock:
+            # Delete and re-seed in ONE transaction. Split across two, the
+            # profile row is committed-absent for a round trip, and every
+            # per-user table now has a foreign key pointing at it -- so a
+            # concurrent write landing in that window raises
+            # ForeignKeyViolationError and surfaces as a 500. ChatService in
+            # particular inserts its user message under neither lock held
+            # here, so nothing else serializes it against this. Before the
+            # foreign keys existed the same race silently wrote an orphan row.
+            # seed_if_empty opens a transaction of its own; that nests into
+            # this one as a no-op rather than starting a second.
             async with self._db.transaction():
                 await self._positions.delete_all()
                 await self._trades.delete_all()
@@ -87,12 +97,12 @@ class ResetService:
                 await self._chat.delete_all()
                 await self._watchlist.delete_all()
                 await self._db.execute("DELETE FROM users_profile WHERE id = 'default'")
+                await seed_if_empty(self._db, self._settings)
+                await self._snapshots.insert(self._settings.initial_cash)
 
-            await seed_if_empty(self._db, self._settings)
+            # Outside the transaction: these touch the market source and the
+            # in-memory history store, not the database.
             await self._reconciler.reconcile()
             self._history.clear()
-
-            async with self._db.transaction():
-                await self._snapshots.insert(self._settings.initial_cash)
 
         logger.info("Reset to seeded state")

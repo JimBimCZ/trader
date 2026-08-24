@@ -169,9 +169,10 @@ class TestDropSchemaRefusesNonTestSchemas:
     The one that is worth stating outright, because it looks like a
     counterexample: `"test_" + "a" * 13` DOES match `_DROPPABLE_SCHEMA_RE`
     (`a` is a hex digit and 13 is inside `{6,32}`). It is a lookalike for
-    the *sweep's* pattern, `_TEST_SCHEMA_RE`, which pins the length at
-    exactly 12 -- not for the drop guard. The two patterns are deliberately
-    different widths, and conflating them is the easy mistake to make here.
+    the *sweep's* pattern, `_SWEEP_SCHEMA_RE`, which pins each prefix to its
+    exact generated width -- 12 hex for `test_` -- not for the drop guard. The
+    two patterns are deliberately different widths, and conflating them is the
+    easy mistake to make here.
     """
 
     async def test_refuses_to_drop_public(self):
@@ -190,3 +191,47 @@ class TestDropSchemaRefusesNonTestSchemas:
         it's the absence of a ValueError that's under test here."""
         await _drop_schema(TEST_DSN, f"test_{uuid.uuid4().hex[:12]}")
         await _drop_schema(TEST_DSN, f"probe_{uuid.uuid4().hex[:8]}")
+
+
+class TestSweepReclaimsProbeSchemas:
+    """The sweep's whole purpose is reclaiming what a crashed run left behind.
+
+    `test_search_path.py` generates `probe_<8 hex>` schemas and drops them in
+    a `finally` -- which does not run on a SIGKILL or a CI timeout, the exact
+    case the sweep exists for. The sweep originally matched only `test_<12
+    hex>`, so a probe orphaned that way was never reclaimed by anything.
+    """
+
+    async def test_an_orphaned_probe_schema_is_swept(self):
+        schema = f"probe_{uuid.uuid4().hex[:8]}"
+        admin = await asyncpg.connect(normalize_dsn(TEST_DSN))
+        try:
+            await admin.execute(f'CREATE SCHEMA "{schema}"')
+        finally:
+            await admin.close()
+
+        dropped = await sweep_orphaned_test_schemas(TEST_DSN)
+
+        assert schema in dropped
+        assert not await _schema_exists(schema)
+
+    async def test_a_probe_shaped_lookalike_is_left_alone(self):
+        """Same near-miss guarantee the `test_` prefix already had: only the
+        exact generated width is swept."""
+        wrong_width = f"probe_{uuid.uuid4().hex[:12]}"  # 12 hex, not 8
+        admin = await asyncpg.connect(normalize_dsn(TEST_DSN))
+        try:
+            await admin.execute(f'CREATE SCHEMA IF NOT EXISTS "{wrong_width}"')
+        finally:
+            await admin.close()
+
+        try:
+            dropped = await sweep_orphaned_test_schemas(TEST_DSN)
+            assert wrong_width not in dropped
+            assert await _schema_exists(wrong_width)
+        finally:
+            admin = await asyncpg.connect(normalize_dsn(TEST_DSN))
+            try:
+                await admin.execute(f'DROP SCHEMA IF EXISTS "{wrong_width}" CASCADE')
+            finally:
+                await admin.close()

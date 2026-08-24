@@ -16,6 +16,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    # Must match the app's policy. depends_on is honoured by `compose up`, not
+    # by the daemon on reboot -- without this the app would come back after a
+    # restart and the database would not, and since DATABASE_URL is required
+    # with no fallback the app would crash-loop until someone ran compose again.
+    restart: unless-stopped
 
   trader:
     build:
