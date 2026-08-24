@@ -160,11 +160,18 @@ class TestDropSchemaRefusesNonTestSchemas:
     into `_drop_schema`, so any caller that goes through it -- present or
     future -- is refused a non-test schema. `test_sweep_never_touches_
     public_or_a_lookalike_schema` above still tears its own lookalike
-    schemas (`test_short`, `test_GGGGGGGGGGGG`, ...) down with a raw admin
-    connection rather than through `_drop_schema` -- not an oversight this
-    fix left behind, but by design: those names are exactly the shapes
-    `_DROPPABLE_SCHEMA_RE` exists to reject, so `_drop_schema` would refuse
-    to drop them.
+    schemas down with a raw admin connection rather than through
+    `_drop_schema` -- not an oversight this fix left behind, but by design:
+    most of those names (`test_short`, `test_GGGGGGGGGGGG`, `testing_...`)
+    are shapes `_DROPPABLE_SCHEMA_RE` rejects, so `_drop_schema` would
+    refuse to drop them and the teardown would leak.
+
+    The one that is worth stating outright, because it looks like a
+    counterexample: `"test_" + "a" * 13` DOES match `_DROPPABLE_SCHEMA_RE`
+    (`a` is a hex digit and 13 is inside `{6,32}`). It is a lookalike for
+    the *sweep's* pattern, `_TEST_SCHEMA_RE`, which pins the length at
+    exactly 12 -- not for the drop guard. The two patterns are deliberately
+    different widths, and conflating them is the easy mistake to make here.
     """
 
     async def test_refuses_to_drop_public(self):

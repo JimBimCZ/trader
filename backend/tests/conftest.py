@@ -108,10 +108,15 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
         await admin.close()
 
     # Dropped through _drop_schema, not inline, so each name is re-checked
-    # against its guard before the DROP runs -- not "the same chokepoint every
-    # schema in this suite goes through": test_schema_cleanup.py's lookalike
-    # names (test_short, test_GGGGGGGGGGGG, ...) are deliberately shaped to
-    # fail _DROPPABLE_SCHEMA_RE and so cannot route through here either.
+    # against its guard before the DROP runs. Note this is not "the same
+    # chokepoint every schema in this suite goes through": test_schema_cleanup
+    # .py tears its lookalike schemas down with a raw admin connection, because
+    # most of those names (test_short, test_GGGGGGGGGGGG, testing_...) fail
+    # _DROPPABLE_SCHEMA_RE and _drop_schema would refuse them. Careful: the two
+    # patterns are not the same test. The lookalikes are built to miss
+    # _TEST_SCHEMA_RE, the sweep's selector above, and "test_" + "a" * 13
+    # misses it on length while still matching the looser
+    # _DROPPABLE_SCHEMA_RE -- so that one _drop_schema would happily drop.
     for name in matches:
         await _drop_schema(dsn, name)
     return matches
