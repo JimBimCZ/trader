@@ -1,4 +1,4 @@
-"""Default seed data, written once when the database is empty."""
+"""Default seed data, written once per user."""
 
 from __future__ import annotations
 
@@ -27,26 +27,44 @@ DEFAULT_WATCHLIST = [
 ]
 
 
-async def seed_if_empty(db: Database, settings: Settings) -> bool:
-    """Seed the default profile and watchlist if no profile exists.
+async def seed_user(db: Database, settings: Settings, user_id: str) -> None:
+    """Give one user their starting cash balance and the default watchlist.
 
-    Returns True if seeding happened. Safe to call on every startup.
+    The profile row must already exist -- the watchlist rows carry a foreign
+    key to it. Callers create the row and seed inside one transaction.
+
+    This replaces seed_if_empty, whose "is the database empty?" question was
+    the single-user form of "does this user have rows?". With many users the
+    database is never empty after the first guest, so that check would have
+    silently skipped seeding for everyone after the first.
+    """
+    now = utcnow_iso()
+    for ticker in DEFAULT_WATCHLIST:
+        await db.execute(
+            "INSERT INTO watchlist (id, user_id, ticker, added_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (user_id, ticker) DO NOTHING",
+            (str(uuid.uuid4()), user_id, canonicalize_ticker(ticker), now),
+        )
+    logger.info("Seeded %d watchlist tickers for %s", len(DEFAULT_WATCHLIST), user_id)
+
+
+async def seed_if_empty(db: Database, settings: Settings) -> bool:
+    """Seed the shared `default` user if it does not exist yet.
+
+    Transitional: kept only so the lifespan and ResetService keep working
+    while per-request scoping is built. Task 6 deletes it along with
+    DEFAULT_USER_ID.
     """
     existing = await db.fetch_one("SELECT id FROM users_profile WHERE id = ?", (DEFAULT_USER_ID,))
     if existing is not None:
         return False
-
     now = utcnow_iso()
     async with db.transaction():
         await db.execute(
-            "INSERT INTO users_profile (id, cash_balance, created_at) VALUES (?, ?, ?)",
-            (DEFAULT_USER_ID, settings.initial_cash, now),
+            "INSERT INTO users_profile "
+            "(id, cash_balance, created_at, kind, last_seen_at) "
+            "VALUES (?, ?, ?, 'guest', ?)",
+            (DEFAULT_USER_ID, settings.initial_cash, now, now),
         )
-        for ticker in DEFAULT_WATCHLIST:
-            await db.execute(
-                "INSERT INTO watchlist (id, user_id, ticker, added_at) VALUES (?, ?, ?, ?)",
-                (str(uuid.uuid4()), DEFAULT_USER_ID, canonicalize_ticker(ticker), now),
-            )
-
-    logger.info("Seeded default profile and %d watchlist tickers", len(DEFAULT_WATCHLIST))
+        await seed_user(db, settings, DEFAULT_USER_ID)
     return True

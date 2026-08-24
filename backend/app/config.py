@@ -79,6 +79,14 @@ class Settings:
     #: what happens when it is unset.
     session_secret: str = ""
 
+    #: Days of inactivity after which a guest (never a signed-in user) is
+    #: deleted, cascading away its watchlist, positions, trades, and chat.
+    guest_ttl_days: int = 7
+
+    #: Minimum gap between `last_seen_at` writes for the same user, so an
+    #: unthrottled hot path doesn't turn every GET into a Neon round trip.
+    last_seen_throttle_seconds: float = 300.0
+
     # History ring buffer
     history_maxlen: int = 600
     history_poll_seconds: float = 0.5
@@ -164,4 +172,5 @@ class Settings:
             ).strip(),
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
             session_secret=session_secret,
+            guest_ttl_days=_env_int("GUEST_TTL_DAYS", 7) or 7,
         )
