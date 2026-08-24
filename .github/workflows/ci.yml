@@ -187,7 +187,6 @@ jobs:
 
       - name: Build and start the app
         run: |
-          mkdir -p db
           docker compose -f test/docker-compose.test.yml up -d --build
           for _ in $(seq 1 90); do
             curl -fsS http://localhost:8000/api/health >/dev/null 2>&1 && exit 0

@@ -22,6 +22,20 @@ document has no build order, no ownership map, no definition of done, and no com
 those are the failures that actually stall a parallel agent build. §13 also introduced a new problem
 of its own (Part C.1).
 
+> **Status: resolved, like §13.** `planning/DECISIONS.md` folds in this review's findings alongside
+> §13's (see its header: "This log resolves the open items raised in PLAN.md §13 and REVIEW.md").
+> Kept for provenance, not as open questions.
+>
+> **One item is now doubly historical.** B.1.2, B.1.5 and Part D action item 19 recommend SQLite
+> fixes (`db/*.db*` in `.gitignore`, `db/.gitkeep`, adding `aiosqlite`) that were in fact made — and
+> then undone by the 2026-08-24 postgres-everywhere phase, which deleted SQLite, `aiosqlite`, and
+> the top-level `db/` directory outright. B.3.8's recommended locking mechanism (a SQLite `BEGIN
+> IMMEDIATE` transaction) was likewise implemented as described in spirit — a lock held across the
+> whole trade transaction — but the mechanism is now `pg_advisory_xact_lock` in `postgres.py`, not
+> SQLite's statement-level locking. See
+> `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` and `planning/DECISIONS.md`
+> D-35/D-38 for the current state.
+
 ---
 
 ## Part A — Corrections and additions to §13

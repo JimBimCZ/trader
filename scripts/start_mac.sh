@@ -25,8 +25,6 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-mkdir -p db
-
 echo "Starting Trader…"
 docker compose up -d $BUILD_FLAG
 

@@ -15,8 +15,6 @@ if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
 }
 
-New-Item -ItemType Directory -Force -Path "db" | Out-Null
-
 Write-Host "Starting Trader..."
 if ($Build) { docker compose up -d --build } else { docker compose up -d }
 

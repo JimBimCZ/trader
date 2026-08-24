@@ -12,8 +12,8 @@ uv sync --extra dev
 ## Commands
 
 ```bash
-uv run --extra dev pytest                      # 314 tests
-uv run --extra dev pytest --cov=app            # with coverage (97%)
+uv run --extra dev pytest                      # 392 tests, needs Postgres (see Testing below)
+uv run --extra dev pytest --cov=app            # with coverage
 uv run --extra dev pytest tests/portfolio -v   # one area
 uv run --extra dev ruff check app/ tests/      # lint
 uv run ruff format app/ tests/                 # format
@@ -32,7 +32,7 @@ STATIC_DIR=../frontend/out uv run uvicorn app.main:app   # with the built fronte
 | `app/errors.py` | `AppError` subclasses and the JSON error envelope |
 | `app/deps.py` | FastAPI dependencies, resolved from `app.state` |
 | `app/reconcile.py` | Owns the tracked-ticker set |
-| `app/db/` | Schema, connection, seed |
+| `app/db/` | Postgres connection, schema, seed, migrations |
 | `app/market/` | Simulator, Massive client, price cache, SSE |
 | `app/portfolio/` | Trades, valuation, snapshots |
 | `app/watchlist/` | Watchlist CRUD |
@@ -81,12 +81,15 @@ Default tickers, seed prices, and per-ticker volatility live in `app/market/seed
 
 ## Testing
 
-`tests/` mirrors `app/` one-to-one. Shared fixtures are in `tests/conftest.py`:
+`tests/` mirrors `app/` one-to-one. Tests run against a real Postgres — `TEST_DATABASE_URL`
+(defaults to `postgresql://trader:trader@localhost:5432/trader`, matching the compose service),
+with each test getting its own throwaway schema, dropped afterward. Shared fixtures are in
+`tests/conftest.py`:
 
 | Fixture | What it gives you |
 |---|---|
-| `settings` | Settings on a temp database, LLM mocked, seeded RNG |
-| `db` / `seeded_db` | An initialized (and optionally seeded) database |
+| `settings` | Settings pointed at a fresh throwaway schema, LLM mocked, seeded RNG |
+| `db` / `seeded_db` | An initialized (and optionally seeded) database, in its own schema |
 | `price_cache` / `priced_cache` | A bare cache, or one pre-filled at seed prices |
 | `services` | Every service wired together against a stub market source |
 | `api_client` | A `TestClient` over a fully started app (real lifespan) |

@@ -191,12 +191,18 @@ execution is the point of the project.
 ## 6. Runtime, packaging, operations
 
 **D-35 — SQLite: WAL mode, `check_same_thread=False`, `aiosqlite` for async access.** (§13 #28)
+*Superseded 2026-08-24: SQLite is deleted. `Database` is now `PostgresDatabase`; concurrent writes
+are serialized by a Postgres advisory lock in `postgres.py`, not by WAL mode or a single-thread
+restriction. See `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
 
 **D-36 — DB initialization happens in the FastAPI lifespan, before the market source starts.**
 (REVIEW B.3.1) PLAN §4's "lazy init on first request" is incompatible with
 `MarketDataSource.start(tickers)` needing the ticker list at startup. Startup order is:
 open DB -> init schema + seed if empty -> read the union ticker set -> start market source ->
 start snapshot task -> serve.
+*Updated 2026-08-24: the order gained a step. It is now `init_db` -> `seed_if_empty` ->
+`run_migrations`, then the union ticker set, market source, snapshot task, and serve, as before.
+The "eager, not lazy" decision itself still stands.*
 
 **D-37 — The backend reads environment variables only. `python-dotenv` loads `.env` for local
 (non-Docker) development.** (§13 #3) Docker passes `--env-file`, so there is no project-root `.env`
@@ -204,6 +210,10 @@ inside the container to read.
 
 **D-38 — Docker uses a bind mount: `-v "$(pwd)/db:/app/db"`.** (§13 #1) A named volume makes
 `db/.gitkeep` inert and hides `trader.db` from the user.
+*Superseded 2026-08-24: there is no longer a database file to bind-mount. `docker-compose.yml` runs
+Postgres as a sibling service with its own named volume (`trader-pgdata`); the top-level `db/`
+directory and `db/.gitkeep` are removed. See
+`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
 
 **D-39 — Port binding is localhost-only: `-p 127.0.0.1:8000:8000`.** (§13 #29) The app has no auth
 and auto-executes trades; it must not be exposed to the LAN by default.
@@ -217,7 +227,9 @@ wrappers.** (§13 #34) Five artifacts with two code paths otherwise drift.
 dev extra; it exists only for `market_data_demo.py`.
 
 **D-43 — Repo hygiene, fixed in this build:** (REVIEW B.1.1–B.1.4) Node/Next entries in
-`.gitignore`; `db/*.db*` ignored and `db/.gitkeep` created; `.env.example` at the project root; a
+`.gitignore`; `db/*.db*` ignored and `db/.gitkeep` created *(superseded 2026-08-24: both the
+`db/*.db*` ignore rules and `db/.gitkeep` are removed along with the top-level `db/` directory,
+which no longer has a purpose now that Postgres owns persistence)*; `.env.example` at the project root; a
 `.dockerignore`; and `ci.yml` running ruff, pytest, frontend lint/tests, and a Docker build.
 
 **D-44 — Massive mode outside market hours goes static, and that is expected.** (§13 #31) Documented

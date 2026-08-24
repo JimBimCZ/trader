@@ -231,10 +231,5 @@ test/playwright-report/
 test/blob-report/
 test/.cache/
 
-# --- SQLite runtime database ---
-db/*.db
-db/*.db-wal
-db/*.db-shm
-
 # --- Playwright / E2E artifacts ---
 test/node_modules/

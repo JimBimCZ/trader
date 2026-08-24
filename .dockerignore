@@ -18,8 +18,6 @@
 **/out
 **/.turbo
 
-# Runtime data — never bake a database into the image
-db/
 test/test-results
 test/playwright-report
 
