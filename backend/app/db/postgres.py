@@ -1,9 +1,8 @@
-"""Postgres implementation of `Database`, for the serverless deployment.
+"""The Postgres implementation of `Database`.
 
-Serverless functions have no persistent disk, so SQLite has nowhere to live.
-This adapter puts the same schema on Neon without touching a single repository:
-the repositories keep writing SQLite-flavoured SQL with `?` placeholders, and
-`_to_numbered` rewrites those into Postgres's `$1, $2, …` on the way through.
+The repositories write plain SQL with `?` placeholders, which asyncpg does
+not accept; `_to_numbered` rewrites those into `$1, $2, …` on the way
+through, so this is the only file that knows a translation happens.
 """
 
 from __future__ import annotations
@@ -17,8 +16,7 @@ from typing import Any
 
 import asyncpg
 
-from .connection import Database
-from .schema import POSTGRES_SCHEMA_SQL
+from .schema import SCHEMA_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +65,25 @@ def normalize_dsn(dsn: str) -> str:
     return dsn
 
 
-class PostgresDatabase(Database):
-    """A `Database` over an asyncpg pool."""
+class PostgresDatabase:
+    """A database over an asyncpg pool."""
 
-    #: Postgres has no implicit row ordering, so the schema adds one.
-    sequence_column = "seq"
-
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, search_path: str = "") -> None:
         self._pool = pool
+        self._search_path = search_path
 
     @classmethod
-    async def connect(cls, dsn: str, max_size: int = 4) -> PostgresDatabase:
+    async def connect(cls, dsn: str, max_size: int = 4, search_path: str = "") -> PostgresDatabase:
         """Open a pool against Neon's pooled endpoint.
 
         `statement_cache_size=0` is not optional: the pooled endpoint runs
         pgbouncer in transaction mode, where a prepared statement made on one
         server-side connection is not there on the next, and asyncpg's cache
         would hand out stale statement names.
+
+        `search_path` confines every table to one schema. Production leaves it
+        empty and uses `public`; the test suite gives each test its own schema,
+        which is what makes them isolated and safe to run in parallel.
         """
         pool = await asyncpg.create_pool(
             normalize_dsn(dsn),
@@ -91,9 +91,10 @@ class PostgresDatabase(Database):
             max_size=max_size,
             statement_cache_size=0,
             command_timeout=15.0,
+            server_settings={"search_path": search_path} if search_path else None,
         )
         logger.info("Postgres pool ready")
-        return cls(pool)
+        return cls(pool, search_path)
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[asyncpg.Connection]:
@@ -121,7 +122,7 @@ class PostgresDatabase(Database):
         """No-op: statements outside `transaction()` autocommit."""
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[Database]:
+    async def transaction(self) -> AsyncIterator[PostgresDatabase]:
         """Run a block atomically, holding the cross-instance write lock.
 
         The advisory lock is taken inside the transaction and released with it,
@@ -144,9 +145,36 @@ class PostgresDatabase(Database):
                     _current.reset(token)
 
     async def initialize_schema(self) -> None:
-        async with self._pool.acquire() as conn:
-            await conn.execute(POSTGRES_SCHEMA_SQL)
+        # Goes through _connection(), not a fresh acquire, so a caller that
+        # wraps this in transaction() gets schema creation on the same
+        # connection -- and under the same advisory lock -- as whatever runs
+        # after it. Outside a transaction() block this is unchanged: one
+        # connection borrowed from the pool for the duration of the call.
+        async with self._connection() as conn:
+            if self._search_path:
+                # The pool's search_path names it, but naming a schema does not
+                # create it, and CREATE TABLE will not create it either.
+                #
+                # Belt-and-braces, not a live fix: an embedded `"` here could
+                # break out of the quoted identifier, but self._search_path is
+                # also passed as server_settings={"search_path": ...} at
+                # connect() above, and asyncpg validates that value -- as
+                # search_path list syntax -- before this method ever runs, so
+                # every payload that would inject here is already rejected
+                # earlier. Escaping it anyway costs nothing and doesn't rely
+                # on that other validation staying in place.
+                escaped = self._search_path.replace('"', '""')
+                await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{escaped}"')
+            await conn.execute(SCHEMA_SQL)
         logger.info("Postgres schema ready")
 
     async def close(self) -> None:
         await self._pool.close()
+
+    async def is_healthy(self) -> bool:
+        try:
+            await self.fetch_one("SELECT 1")
+        except Exception:
+            logger.exception("Database health check failed")
+            return False
+        return True

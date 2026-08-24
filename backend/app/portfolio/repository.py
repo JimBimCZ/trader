@@ -119,12 +119,11 @@ class TradeRepository:
         return trade
 
     async def list_recent(self, limit: int = 50) -> list[Trade]:
-        seq = self._db.sequence_column
         rows = await self._db.fetch_all(
-            f"""
+            """
             SELECT id, ticker, side, quantity, price, executed_at
             FROM trades WHERE user_id = ?
-            ORDER BY executed_at DESC, {seq} DESC
+            ORDER BY executed_at DESC, seq DESC
             LIMIT ?
             """,
             (self._user_id, limit),
@@ -163,12 +162,11 @@ class SnapshotRepository:
 
     async def list(self, limit: int = 500) -> list[PortfolioSnapshot]:
         """Newest `limit` snapshots, returned oldest-first for charting."""
-        seq = self._db.sequence_column
         rows = await self._db.fetch_all(
-            f"""
+            """
             SELECT total_value, recorded_at FROM portfolio_snapshots
             WHERE user_id = ?
-            ORDER BY recorded_at DESC, {seq} DESC
+            ORDER BY recorded_at DESC, seq DESC
             LIMIT ?
             """,
             (self._user_id, limit),

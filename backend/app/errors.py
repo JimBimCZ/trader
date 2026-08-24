@@ -122,3 +122,9 @@ class RouteNotFoundError(AppError):
     """
 
     status_code, code = 404, "ROUTE_NOT_FOUND"
+
+
+class ConfigurationError(AppError):
+    """The process cannot start with the configuration it was given."""
+
+    status_code, code = 500, "CONFIGURATION_ERROR"

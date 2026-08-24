@@ -34,11 +34,13 @@ logger = logging.getLogger(__name__)
 class TradeService:
     """Executes trades and reports portfolio state.
 
-    Every write holds `lock` for the whole transaction. aiosqlite serializes
-    individual statements, but a trade is a read-validate-write sequence with
-    await points in between; without the lock two concurrent trades could
-    interleave and lose an update, and a second BEGIN IMMEDIATE on the shared
-    connection would fail outright.
+    Every write holds `lock` for the whole transaction. A trade is a
+    read-validate-write sequence with await points in between; without the
+    lock, two concurrent trades in this process could each read the same
+    starting cash balance and interleave their writes, losing one of the
+    updates. `Database.transaction()` adds a cross-instance advisory lock on
+    top of this one, since a serverless deployment can have more than one
+    process running at once.
     """
 
     def __init__(

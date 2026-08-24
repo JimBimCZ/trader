@@ -3,7 +3,8 @@
 A visually dense trading terminal: live streaming prices, a simulated $10,000 portfolio, and an
 LLM assistant that can analyze your positions and execute trades on your behalf.
 
-Everything runs in one container on one port. No login, no signup, no real money.
+The app itself runs in one container on one port — `docker compose` also starts a companion
+Postgres. No login, no signup, no real money.
 
 ![Trader](docs/screenshot.png)
 
@@ -14,7 +15,8 @@ cp .env.example .env      # add your OPENROUTER_API_KEY
 ./scripts/start_mac.sh    # macOS/Linux  (scripts\start_windows.ps1 on Windows)
 ```
 
-The app opens at <http://localhost:8000>. To stop it:
+`docker compose up` starts two containers: the app and a local Postgres. The app opens at
+<http://localhost:8000>. To stop it:
 
 ```bash
 ./scripts/stop_mac.sh
@@ -23,8 +25,8 @@ The app opens at <http://localhost:8000>. To stop it:
 Both scripts wrap `docker compose`, so `docker compose up -d --build` and `docker compose down`
 work identically if you prefer.
 
-Your portfolio persists in `db/trader.db` between restarts. Delete that file, or use the in-app
-reset, to start over.
+Your portfolio persists in the `trader-pgdata` Docker volume between restarts. `docker compose
+down -v` wipes that volume and starts you over at $10k; the in-app reset still works too.
 
 ## What you can do
 
@@ -45,6 +47,7 @@ with `--env-file`.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
+| `DATABASE_URL` | **Yes** | — | Postgres connection string. The app refuses to start without one — `docker compose` supplies the local Postgres service's URL automatically; a manual `uv run uvicorn` needs it set by hand. |
 | `OPENROUTER_API_KEY` | For real chat | — | OpenRouter key. Without it the assistant falls back to mock responses. |
 | `MASSIVE_API_KEY` | No | empty | Set to use real market data from Massive/Polygon. **Leave empty to use the built-in simulator**, which costs nothing and works offline. |
 | `LLM_MOCK` | No | `false` | `true` gives deterministic assistant responses with no API calls. Used by the E2E suite. |
@@ -70,12 +73,11 @@ real data for synthetic data is worse than a still screen.
 ## Architecture
 
 ```
-Docker container (port 8000)
-├── FastAPI
-│   ├── /api/*          REST
+Docker container (port 8000)                 ──►  Postgres 16
+├── FastAPI                                       (compose service locally,
+│   ├── /api/*          REST                       Neon when deployed)
 │   ├── /api/stream/*   Server-Sent Events
 │   └── /*              the exported frontend
-├── SQLite at db/trader.db (bind-mounted)
 └── Background tasks: market data, history collection, portfolio snapshots
 ```
 
@@ -91,7 +93,7 @@ Docker container (port 8000)
 # Backend
 cd backend
 uv sync --extra dev
-uv run --extra dev pytest                  # 314 tests
+uv run --extra dev pytest                  # 392 tests, needs Postgres (TEST_DATABASE_URL, defaults to the compose service)
 uv run --extra dev ruff check app/ tests/
 uv run uvicorn app.main:app --reload
 
@@ -114,13 +116,13 @@ point the backend at it with `STATIC_DIR=../frontend/out`.
 ## Deploying to Vercel
 
 Docker is the reference deployment. The app also runs on Vercel, where a long-lived process is not
-available: prices there are computed from the clock rather than ticked by a background task, and the
-database is Neon Postgres rather than a SQLite file. Both live behind the same interfaces, so the
-routes, services and frontend are identical on either target.
+available: prices there are computed from the clock rather than ticked by a background task. Both
+targets run on Postgres — the compose service locally, Neon when deployed — behind the same
+interface, so the routes, services and frontend are identical on either target.
 
 The repository root carries `vercel.json`, `requirements.txt` and `api/index.py`; pushing to `main`
-deploys. One manual step remains after the first deploy — set `DATABASE_URL` to a Neon **pooled**
-connection string, or state lives in `/tmp` and resets when the instance recycles.
+deploys. `DATABASE_URL` must be set to a Neon **pooled** connection string before the deployment is
+usable — there is no fallback database, so the app refuses to start without one.
 `planning/VERCEL_DEPLOYMENT.md` has the detail.
 
 ## Documentation

@@ -1,4 +1,27 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trader-db
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: trader
+    ports:
+      # Localhost only, like the app: this database has no meaningful password.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - trader-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trader"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Must match the app's policy. depends_on is honoured by `compose up`, not
+    # by the daemon on reboot -- without this the app would come back after a
+    # restart and the database would not, and since DATABASE_URL is required
+    # with no fallback the app would crash-loop until someone ran compose again.
+    restart: unless-stopped
+
   trader:
     build:
       context: .
@@ -11,8 +34,14 @@ services:
       - "127.0.0.1:8000:8000"
     env_file:
       - .env
-    volumes:
-      # A bind mount rather than a named volume, so the database is visible
-      # and deletable from the host.
-      - ./db:/app/db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Wins over env_file, so a DATABASE_URL in .env pointing at Neon does
+      # not take effect here: `docker compose up` always uses this container.
+      DATABASE_URL: postgresql://trader:trader@postgres:5432/trader
     restart: unless-stopped
+
+volumes:
+  trader-pgdata:

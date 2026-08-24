@@ -1,6 +1,7 @@
 # Backend — Component Summary
 
-Status: **complete**. 314 tests, 97% coverage, ruff clean.
+Status: **complete**. 392 tests, ruff clean. Runs on Postgres only — SQLite was removed
+2026-08-24; see `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.
 
 ## Structure
 
@@ -12,7 +13,7 @@ backend/app/
 ├── errors.py          AppError hierarchy + the JSON error envelope
 ├── deps.py            FastAPI dependencies, resolved from app.state
 ├── reconcile.py       owns the tracked-ticker set
-├── db/                schema, connection, seed
+├── db/                Postgres connection, schema, seed, migrations
 ├── market/            (pre-existing) simulator, Massive, cache, SSE
 ├── portfolio/         models, formulas, repository, service, snapshots, router
 ├── watchlist/         repository, service, router
@@ -33,15 +34,22 @@ a ticker the user still holds would leave the position unpriceable.
 **A missing price is an error, never zero.** `formulas.total_value()` raises rather than valuing an
 unpriced holding at nothing, which would quietly write a wrong number into the P&L history.
 
-**Trades hold a lock across the whole transaction.** aiosqlite serializes individual statements,
-but a trade is read-validate-write with `await` points in between. Without the lock two concurrent
-trades interleave and lose an update, and a second `BEGIN IMMEDIATE` on the shared connection
-fails outright. `tests/portfolio/test_service.py::TestConcurrency` runs ten parallel buys and
-asserts all ten land.
+**Trades hold a lock across the whole transaction.** A trade is read-validate-write with `await`
+points in between; without serialization two concurrent trades can interleave and lose an update.
+`Database.transaction()` (`postgres.py`) takes a Postgres transaction-scoped advisory lock
+(`pg_advisory_xact_lock`) for the duration, so writes are serialized across every connection in the
+pool, not just within one process. `tests/portfolio/test_service.py::TestConcurrency` runs ten
+parallel buys and asserts all ten land.
 
 **The database is initialized in the lifespan, not on first request.** The market source needs the
-watchlist to know what to track, so it cannot wait for a request. This resolves the contradiction
+watchlist to know what to track, so it cannot wait for a request. Startup order is `init_db` ->
+`seed_if_empty` -> `run_migrations`, then the market source starts. This resolves the contradiction
 `REVIEW.md` B.3.1 identified.
+
+**Postgres is required, not optional.** `DATABASE_URL` must be set; `Settings.require_database_url()`
+raises `ConfigurationError` at startup otherwise. There is no file-based fallback — the one it
+replaced (SQLite locally, `/tmp` on Vercel) worked until an instance recycled and then silently
+lost the portfolio, which is worse than refusing to start.
 
 **`trades` is authoritative; positions and cash are a projection.** The execution algorithm is
 exactly the replay procedure, so a future "recompute from trades" repair is well defined.

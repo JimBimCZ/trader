@@ -140,26 +140,34 @@ allocation bar, and the main chart's line.
 │  └── /*              Static file serving         │
 │                      (Next.js export)            │
 │                                                 │
-│  SQLite database (volume-mounted)               │
 │  Background task: market data polling/sim        │
 └─────────────────────────────────────────────────┘
+                    │
+                    ▼
+   Postgres 16 — a sibling compose service locally, Neon when deployed
 ```
 
 - **Frontend**: Next.js with TypeScript, built as a static export (`output: 'export'`), served by FastAPI as static files
 - **Backend**: FastAPI (Python), managed as a `uv` project
-- **Database**: SQLite, single file at `db/trader.db`, volume-mounted for persistence
+- **Database**: Postgres, reached via `DATABASE_URL` — a `postgres:16-alpine` compose service for
+  Docker use, Neon Postgres when deployed. Required: the app refuses to start without it.
 - **Real-time data**: Server-Sent Events (SSE) — simpler than WebSockets, one-way server→client push, works everywhere
 - **AI integration**: LiteLLM → OpenRouter (Cerebras for fast inference), with structured outputs for trade execution
 - **Market data**: Environment-variable driven — simulator by default, real data via Massive API if key provided
 
 ### Why These Choices
 
+*Revised 2026-08-24: SQLite is gone and the app is multi-user. The row below replaces
+"SQLite over Postgres", whose premise — no auth, so no multi-user, so no database server —
+stopped holding when accounts arrived. See
+`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
+
 | Decision | Rationale |
 |---|---|
 | SSE over WebSockets | One-way push is all we need; simpler, no bidirectional complexity, universal browser support |
 | Static Next.js export | Single origin, no CORS issues, one port, one container, simple deployment |
-| SQLite over Postgres | No auth = no multi-user = no need for a database server; self-contained, zero config |
-| Single Docker container | Students run one command; no docker-compose for production, no service orchestration |
+| Postgres everywhere | One schema and one set of semantics; a serverless deployment has no disk for a database file, and dev/prod parity means no bug class that appears only on Neon |
+| Single Docker container for the app | Students run one command; the app itself stays one image, one process, one port — `docker compose up` now also starts a companion Postgres service, but that's the database, not app orchestration |
 | uv for Python | Fast, modern Python project management; reproducible lockfile; what students should learn |
 | Market orders only | Eliminates order book, limit order logic, partial fills — dramatically simpler portfolio math |
 
@@ -171,30 +179,36 @@ allocation bar, and the main chart's line.
 trader/
 ├── frontend/                 # Next.js TypeScript project (static export)
 ├── backend/                  # FastAPI uv project (Python)
-│   └── db/                   # Schema definitions, seed data, migration logic
+│   └── app/db/                # Postgres connection, schema, seed, migrations
 ├── planning/                 # Project-wide documentation for agents
 │   ├── PLAN.md               # This document
 │   └── ...                   # Additional agent reference docs
 ├── scripts/
-│   ├── start_mac.sh          # Launch Docker container (macOS/Linux)
-│   ├── stop_mac.sh           # Stop Docker container (macOS/Linux)
-│   ├── start_windows.ps1     # Launch Docker container (Windows PowerShell)
-│   └── stop_windows.ps1      # Stop Docker container (Windows PowerShell)
+│   ├── start_mac.sh          # Launch the compose stack (macOS/Linux)
+│   ├── stop_mac.sh           # Stop the compose stack (macOS/Linux)
+│   ├── start_windows.ps1     # Launch the compose stack (Windows PowerShell)
+│   └── stop_windows.ps1      # Stop the compose stack (Windows PowerShell)
 ├── test/                     # Playwright E2E tests + docker-compose.test.yml
-├── db/                       # Volume mount target (SQLite file lives here at runtime)
-│   └── .gitkeep              # Directory exists in repo; trader.db is gitignored
 ├── Dockerfile                # Multi-stage build (Node → Python)
-├── docker-compose.yml        # Optional convenience wrapper
+├── docker-compose.yml        # App + Postgres, for local/Docker use
 ├── .env                      # Environment variables (gitignored, .env.example committed)
 └── .gitignore
 ```
+
+*Revised 2026-08-24: the top-level `db/` directory (a SQLite bind-mount target) is gone — Postgres
+data now lives in the `trader-pgdata` Docker volume, which Docker manages and nothing in the repo
+needs to reference. See §7 and §11.*
 
 ### Key Boundaries
 
 - **`frontend/`** is a self-contained Next.js project. It knows nothing about Python. It talks to the backend via `/api/*` endpoints and `/api/stream/*` SSE endpoints. Internal structure is up to the Frontend Engineer agent.
 - **`backend/`** is a self-contained uv project with its own `pyproject.toml`. It owns all server logic including database initialization, schema, seed data, API routes, SSE streaming, market data, and LLM integration. Internal structure is up to the Backend/Market Data agents.
-- **`backend/db/`** contains schema SQL definitions and seed logic. The backend lazily initializes the database on first request — creating tables and seeding default data if the SQLite file doesn't exist or is empty.
-- **`db/`** at the top level is the runtime volume mount point. The SQLite file (`db/trader.db`) is created here by the backend and persists across container restarts via Docker volume.
+- **`backend/app/db/`** contains the Postgres schema, connection handling, seed logic, and the
+  forward-only migration runner. Startup is eager, in the FastAPI lifespan, not lazy on first
+  request: `init_db` creates the schema if it is missing, `seed_if_empty` seeds default data, then
+  `run_migrations` re-runs every migration statement, in order, on every startup — there is no
+  version table recording which have already run; every statement is written to be safe to run
+  again, so idempotency does the job bookkeeping would otherwise do.
 - **`planning/`** contains project-wide documentation, including this plan. All agents reference files here as the shared contract.
 - **`test/`** contains Playwright E2E tests and supporting infrastructure (e.g., `docker-compose.test.yml`). Unit tests live within `frontend/` and `backend/` respectively, following each framework's conventions.
 - **`scripts/`** contains start/stop scripts that wrap Docker commands.
@@ -204,6 +218,9 @@ trader/
 ## 5. Environment Variables
 
 ```bash
+# Required: Postgres connection string. The app refuses to start without one.
+DATABASE_URL=postgresql://trader:trader@localhost:5432/trader
+
 # Required: OpenRouter API key for LLM chat functionality
 OPENROUTER_API_KEY=your-openrouter-api-key-here
 
@@ -217,6 +234,12 @@ LLM_MOCK=false
 
 ### Behavior
 
+- `DATABASE_URL` is required. Its absence raises `ConfigurationError` at startup — deliberate,
+  because the serverless fallback it replaces (an ephemeral `/tmp` SQLite file on Vercel; see
+  `planning/VERCEL_DEPLOYMENT.md`) worked until the instance was recycled and then silently lost
+  the portfolio.
+- `docker-compose.yml` pins `DATABASE_URL` to its own Postgres service, overriding whatever is in
+  `.env` — `docker compose up` always uses the local database, never a Neon string left in `.env`.
 - If `MASSIVE_API_KEY` is set and non-empty → backend uses Massive REST API for market data
 - If `MASSIVE_API_KEY` is absent or empty → backend uses the built-in market simulator
 - If `LLM_MOCK=true` → backend returns deterministic mock LLM responses (for E2E tests)
@@ -266,13 +289,23 @@ Both the simulator and the Massive client implement the same abstract interface.
 
 ## 7. Database
 
-### SQLite with Lazy Initialization
+### Postgres, Initialized Eagerly at Startup
 
-The backend checks for the SQLite database on startup (or first request). If the file doesn't exist or tables are missing, it creates the schema and seeds default data. This means:
+*Revised 2026-08-24: the database is Postgres, reached via `DATABASE_URL`, not SQLite. See the
+dated note under §3.*
 
-- No separate migration step
-- No manual database setup
-- Fresh Docker volumes start with a clean, seeded database automatically
+The backend connects to Postgres in the FastAPI lifespan, before the market source starts —
+eagerly, not lazily on first request, because `MarketDataSource.start(tickers)` needs the ticker
+list at startup. Startup order is `init_db` (create the schema if missing) → `seed_if_empty` (seed
+default data into an empty database) → `run_migrations` (re-run every migration statement, in
+order, on every startup). This means:
+
+- A forward-only, idempotent migration runner, not a separate manual migration step — there is no
+  version table recording which migrations have run; every statement is written to be safe to
+  execute again, and idempotency replaces that bookkeeping
+- No manual database setup — a fresh Postgres (the compose service, or a fresh Neon branch) starts
+  clean, seeded, and migrated automatically
+- `DATABASE_URL` must point at a reachable Postgres before the app will start at all
 
 ### Schema
 
@@ -550,27 +583,44 @@ Stage 2: Python 3.12 slim
 
 FastAPI serves the static frontend files and all API routes on port 8000.
 
-### Docker Volume
+### Docker Compose and the Postgres Volume
 
-The SQLite database persists via a named Docker volume:
+*Revised 2026-08-24: the database is a companion Postgres container, not a file the app container
+bind-mounts. See the dated note under §3.*
+
+`docker-compose.yml` runs two services: `trader` (the app, built from the `Dockerfile` above) and
+`postgres` (`postgres:16-alpine`). The app's `DATABASE_URL` is pinned in the compose file's
+`environment:` block, which deliberately overrides anything in `.env` — `docker compose up`
+always talks to this local database, never to a Neon connection string left over in `.env`.
+Postgres's data persists in a named Docker volume, declared in `docker-compose.yml`:
 
 ```bash
-docker run -v trader-data:/app/db -p 8000:8000 --env-file .env trader
+docker compose up -d --build
 ```
 
-The `db/` directory in the project root maps to `/app/db` in the container. The backend writes `trader.db` to this path.
+```yaml
+services:
+  postgres:
+    volumes:
+      - trader-pgdata:/var/lib/postgresql/data
+volumes:
+  trader-pgdata:
+```
+
+There is no `db/` directory in the project root any more — nothing in the repo bind-mounts a
+runtime database path; the volume is managed entirely by Docker.
 
 ### Start/Stop Scripts
 
 **`scripts/start_mac.sh`** (macOS/Linux):
-- Builds the Docker image if not already built (or if `--build` flag passed)
-- Runs the container with the volume mount, port mapping, and `.env` file
+- Builds the images if not already built (or if `--build` flag passed)
+- Runs `docker compose up -d`, which starts both the app and Postgres
 - Prints the URL to access the app
 - Optionally opens the browser
 
 **`scripts/stop_mac.sh`** (macOS/Linux):
-- Stops and removes the running container
-- Does NOT remove the volume (data persists)
+- Runs `docker compose down`
+- Does NOT remove the `trader-pgdata` volume (data persists); `docker compose down -v` does
 
 **`scripts/start_windows.ps1`** / **`scripts/stop_windows.ps1`**: PowerShell equivalents for Windows.
 

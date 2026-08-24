@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import Settings
-from .db import init_db, open_database, seed_if_empty
+from .db import init_db, open_database, run_migrations, seed_if_empty
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
@@ -68,6 +68,10 @@ def _build_history_store(settings: Settings, price_cache: PriceCache) -> History
     return HistoryStore(maxlen=settings.history_maxlen)
 
 
+async def _log_shutdown_complete() -> None:
+    logger.info("Shutdown complete")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Start every subsystem in dependency order, then tear it down.
@@ -78,97 +82,120 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings: Settings = app.state.settings
 
-    db = await open_database(settings)
-    await init_db(db)
-    await seed_if_empty(db, settings)
+    # Every subsystem registers its own teardown the moment it starts, so a
+    # failure anywhere in startup unwinds exactly what is already running --
+    # in reverse order -- instead of leaking it. A plain try/finally around
+    # the yield cannot do this: it only begins once startup has fully
+    # succeeded, so a raise partway through used to leak the pool AND leave
+    # an already-started market source running.
+    async with AsyncExitStack() as stack:
+        # Registered first so it runs last, after every stop() above it has
+        # finished -- the message would otherwise be printed while teardown
+        # was still in progress.
+        stack.push_async_callback(_log_shutdown_complete)
 
-    users = UserRepository(db)
-    positions = PositionRepository(db)
-    trades = TradeRepository(db)
-    snapshots = SnapshotRepository(db)
-    watchlist_repo = WatchlistRepository(db)
-    chat_repo = ChatRepository(db)
+        db = await open_database(settings)
+        stack.push_async_callback(db.close)
 
-    price_cache: PriceCache = app.state.price_cache
-    source = create_market_data_source(price_cache, settings)
-    reconciler = TickerReconciler(source, watchlist_repo, positions)
+        # Wrapped in one transaction, holding the cross-instance advisory
+        # lock for its whole duration: Vercel starts more than one instance
+        # concurrently, and each runs this same sequence on cold start.
+        # Un-locked, two instances race three separate check-then-act steps
+        # (CREATE TABLE IF NOT EXISTS, the seed SELECT-then-INSERT, and the
+        # ADD CONSTRAINT existence check) and one loses with a
+        # UniqueViolationError / DuplicateObjectError instead of just
+        # waiting its turn. ADD CONSTRAINT is transactional in Postgres, so
+        # a transaction is sufficient -- no separate advisory-lock call
+        # needed beyond what transaction() already takes.
+        # Seeding must still precede migrating: migration 001 adds foreign
+        # keys to users_profile, and every per-user row must already point
+        # at a profile that exists.
+        async with db.transaction():
+            await init_db(db)
+            await seed_if_empty(db, settings)
+            await run_migrations(db)
 
-    tracked = await reconciler.compute_tracked_tickers()
-    await source.start(tracked)
+        users = UserRepository(db)
+        positions = PositionRepository(db)
+        trades = TradeRepository(db)
+        snapshots = SnapshotRepository(db)
+        watchlist_repo = WatchlistRepository(db)
+        chat_repo = ChatRepository(db)
 
-    history_store = _build_history_store(settings, price_cache)
-    for ticker in tracked:
-        history_store.track(ticker)
-    # Computed history has nothing to collect, and a serverless instance is
-    # frozen between requests so the task would not run anyway.
-    collector: HistoryCollector | None = None
-    if not settings.serverless and not isinstance(price_cache, DeterministicPriceCache):
-        collector = HistoryCollector(price_cache, history_store, settings.history_poll_seconds)
-        await collector.start()
+        price_cache: PriceCache = app.state.price_cache
+        source = create_market_data_source(price_cache, settings)
+        reconciler = TickerReconciler(source, watchlist_repo, positions)
 
-    trade_lock = asyncio.Lock()
-    watchlist_lock = asyncio.Lock()
+        tracked = await reconciler.compute_tracked_tickers()
+        await source.start(tracked)
+        stack.push_async_callback(source.stop)
 
-    trade_service = TradeService(
-        db, users, positions, trades, snapshots, price_cache, reconciler, trade_lock
-    )
-    watchlist_service = WatchlistService(
-        db, watchlist_repo, reconciler, watchlist_lock, settings.watchlist_cap
-    )
-    chat_service = ChatService(
-        chat_repo,
-        trade_service,
-        watchlist_service,
-        create_chat_client(settings),
-        ActionExecutor(trade_service, watchlist_service),
-        settings,
-    )
-    reset_service = ResetService(
-        db,
-        settings,
-        users,
-        positions,
-        trades,
-        snapshots,
-        watchlist_repo,
-        chat_repo,
-        reconciler,
-        history_store,
-        trade_lock,
-        watchlist_lock,
-    )
+        history_store = _build_history_store(settings, price_cache)
+        for ticker in tracked:
+            history_store.track(ticker)
+        # Computed history has nothing to collect, and a serverless instance is
+        # frozen between requests so the task would not run anyway.
+        collector: HistoryCollector | None = None
+        if not settings.serverless and not isinstance(price_cache, DeterministicPriceCache):
+            collector = HistoryCollector(price_cache, history_store, settings.history_poll_seconds)
+            await collector.start()
+            stack.push_async_callback(collector.stop)
 
-    # Nothing runs between requests on a serverless platform, so the periodic
-    # snapshot moves into the SSE stream — which is open exactly when someone
-    # is watching the chart it feeds.
-    snapshot_writer: SnapshotWriter | None = None
-    if settings.serverless:
-        await trade_service.write_snapshot()
-    else:
-        snapshot_writer = SnapshotWriter(
-            trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
+        trade_lock = asyncio.Lock()
+        watchlist_lock = asyncio.Lock()
+
+        trade_service = TradeService(
+            db, users, positions, trades, snapshots, price_cache, reconciler, trade_lock
         )
-        await snapshot_writer.start()
+        watchlist_service = WatchlistService(
+            db, watchlist_repo, reconciler, watchlist_lock, settings.watchlist_cap
+        )
+        chat_service = ChatService(
+            chat_repo,
+            trade_service,
+            watchlist_service,
+            create_chat_client(settings),
+            ActionExecutor(trade_service, watchlist_service),
+            settings,
+        )
+        reset_service = ResetService(
+            db,
+            settings,
+            users,
+            positions,
+            trades,
+            snapshots,
+            watchlist_repo,
+            chat_repo,
+            reconciler,
+            history_store,
+            trade_lock,
+            watchlist_lock,
+        )
 
-    app.state.db = db
-    app.state.source = source
-    app.state.history_store = history_store
-    app.state.trade_service = trade_service
-    app.state.watchlist_service = watchlist_service
-    app.state.chat_service = chat_service
-    app.state.reset_service = reset_service
+        # Nothing runs between requests on a serverless platform, so the periodic
+        # snapshot moves into the SSE stream — which is open exactly when someone
+        # is watching the chart it feeds.
+        snapshot_writer: SnapshotWriter | None = None
+        if settings.serverless:
+            await trade_service.write_snapshot()
+        else:
+            snapshot_writer = SnapshotWriter(
+                trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
+            )
+            await snapshot_writer.start()
+            stack.push_async_callback(snapshot_writer.stop)
 
-    logger.info("Startup complete: %d tickers tracked", len(tracked))
-    try:
+        app.state.db = db
+        app.state.source = source
+        app.state.history_store = history_store
+        app.state.trade_service = trade_service
+        app.state.watchlist_service = watchlist_service
+        app.state.chat_service = chat_service
+        app.state.reset_service = reset_service
+
+        logger.info("Startup complete: %d tickers tracked", len(tracked))
         yield
-    finally:
-        if snapshot_writer is not None:
-            await snapshot_writer.stop()
-        if collector is not None:
-            await collector.stop()
-        await source.stop()
-        await db.close()
-        logger.info("Shutdown complete")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

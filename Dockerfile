@@ -23,8 +23,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    STATIC_DIR=/app/static \
-    DB_PATH=/app/db/trader.db
+    STATIC_DIR=/app/static
 
 # Dependencies before source, so a code change does not reinstall the world.
 COPY backend/pyproject.toml backend/uv.lock ./
@@ -34,9 +33,6 @@ COPY backend/ ./
 RUN uv sync --frozen --no-dev
 
 COPY --from=frontend /build/out /app/static
-
-# The database directory is a mount point; the image must not carry a database.
-RUN mkdir -p /app/db
 
 EXPOSE 8000
 

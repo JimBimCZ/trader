@@ -3,6 +3,24 @@
 # Playwright runs on the host (or the CI runner) rather than in a second
 # container, which keeps browser dependencies out of the production image.
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trader-e2e-db
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: trader
+    # No named volume, so a container removed with `down` starts clean. But
+    # `up -d` reuses an existing `trader-e2e-db` container (and its writable
+    # layer) when the config hasn't changed, so a run without an intervening
+    # `down` can inherit state — neutralized by test/e2e/fixtures.ts posting
+    # /api/reset before each test, not by anything here.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trader"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
   trader:
     build:
       context: ..
@@ -21,9 +39,10 @@ services:
       # assertion about visible price movement slow and marginal.
       SIM_VOL_MULTIPLIER: "50"
       OPENROUTER_API_KEY: "not-used-in-mock-mode"
-    tmpfs:
-      # A throwaway database per run, so tests never inherit prior state.
-      - /app/db
+      DATABASE_URL: "postgresql://trader:trader@postgres:5432/trader"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test:
         [

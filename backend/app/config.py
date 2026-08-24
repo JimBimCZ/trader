@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+
+from .errors import ConfigurationError
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -39,31 +40,20 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _default_db_path() -> str:
-    """Where SQLite lives when no DATABASE_URL is configured.
-
-    On a serverless platform the only writable directory is /tmp, and it
-    belongs to one instance and survives only until that instance is recycled.
-    That makes it a usable fallback for a demo and a bad place for anything to
-    live permanently — which is what DATABASE_URL is for.
-    """
-    if os.environ.get("VERCEL"):
-        return "/tmp/trader.db"
-    return "db/trader.db"
-
-
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Immutable snapshot of configuration, read once at startup."""
 
-    db_path: Path
     massive_api_key: str = ""
     openrouter_api_key: str = ""
     llm_mock: bool = False
 
-    #: Postgres connection string. When set it replaces SQLite entirely — the
-    #: serverless deployment has no disk to keep a database file on.
+    #: Postgres connection string. Required — see `require_database_url`.
     database_url: str = ""
+
+    #: Postgres schema to confine every table to. Empty means `public`. The
+    #: test suite sets it per test; production has no reason to.
+    db_schema: str = ""
 
     #: "simulator" (stateful GBM on a background task), "deterministic" (the
     #: same process as a pure function of the clock), or "" to decide from the
@@ -119,10 +109,25 @@ class Settings:
         """
         return bool(os.environ.get("VERCEL"))
 
+    def require_database_url(self) -> str:
+        """The connection string, or a startup failure explaining its absence.
+
+        There is deliberately no fallback. A serverless deployment with no
+        database used to write to /tmp, which works until the instance is
+        recycled and then silently loses the portfolio — a failure that looks
+        like a bug in the app rather than a missing variable.
+        """
+        if not self.database_url:
+            raise ConfigurationError(
+                "DATABASE_URL is not set. Trader needs a Postgres connection string; "
+                "run `docker compose up -d postgres` locally, or set the variable to a "
+                "Neon connection string."
+            )
+        return self.database_url
+
     @classmethod
-    def from_env(cls, db_path: Path | None = None) -> Settings:
+    def from_env(cls) -> Settings:
         return cls(
-            db_path=db_path or Path(os.environ.get("DB_PATH", _default_db_path())),
             massive_api_key=os.environ.get("MASSIVE_API_KEY", ""),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
             llm_mock=_env_bool("LLM_MOCK"),
@@ -131,6 +136,7 @@ class Settings:
             sim_vol_multiplier=_env_float("SIM_VOL_MULTIPLIER", 1.0),
             massive_poll_seconds=_env_float("MASSIVE_POLL_SECONDS", 15.0),
             database_url=os.environ.get("DATABASE_URL", "").strip(),
+            db_schema=os.environ.get("DB_SCHEMA", "").strip(),
             # A serverless deployment has no background task to tick a
             # stateful simulator, so it defaults to the computed one.
             market_source=os.environ.get(

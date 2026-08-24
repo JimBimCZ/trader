@@ -1,19 +1,30 @@
 # Vercel Deployment — Plan
 
-*Written 2026-08-24. The Docker path in PLAN.md §11 is unchanged and stays the reference
-deployment; this document describes a second target that runs the same application on Vercel's
-serverless platform.*
+*Written 2026-08-24, updated the same day once the "postgres-everywhere" phase landed
+(`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`). The Docker path in
+PLAN.md §11 is unchanged and stays the reference deployment; this document describes a second
+target that runs the same application on Vercel's serverless platform.*
+
+*What changed underneath this doc: when it was first written, "SQLite → Neon Postgres" (§2 below)
+was a Vercel-specific adaptation — the Docker target still ran SQLite, and a missing
+`DATABASE_URL` fell back to an ephemeral `/tmp` SQLite file so a fresh Vercel deploy would still
+boot. The postgres-everywhere phase deleted SQLite and the `/tmp` fallback entirely: every target,
+Docker included, now requires Postgres via `DATABASE_URL`, and there is no fallback if it is
+absent. §2 is kept, updated, because the mechanics it describes (placeholder translation, the
+advisory lock, the pooled-endpoint requirement) are still exactly how the app talks to Postgres —
+it is just no longer a Vercel-only concern.*
 
 ## Why the app does not fit Vercel as built
 
 `backend/app/main.py` builds a long-lived process. Its `lifespan` starts three background
 tasks — the 500 ms GBM simulator writing into an in-memory `PriceCache`, the history ring-buffer
-collector, and the 30 s snapshot writer — and opens one `aiosqlite` connection to a file on disk.
-SSE readers stream off the shared in-memory cache.
+collector, and the 30 s snapshot writer. SSE readers stream off the shared in-memory cache.
 
 Vercel gives none of that: invocations are stateless, there is no writable persistent disk, no
-work runs between requests, and a function has a bounded lifetime. Three of the four subsystems
-have to change; the routes, services, repositories and the entire frontend do not.
+work runs between requests, and a function has a bounded lifetime. The simulator and the snapshot
+writer have to change (§1 and §3), and serving is split between the CDN and one function (§4); the
+routes, services, repositories and the entire frontend do not. The database (§2) no longer needs
+Vercel-specific adaptation — Postgres, via `DATABASE_URL`, is what every target requires now.
 
 ## The four changes
 
@@ -46,20 +57,32 @@ trade pricing, portfolio valuation, `/api/health`, `/api/history` — is untouch
 The existing GBM simulator stays exactly as it is and remains the Docker default. Selection is by
 `MARKET_SOURCE`, defaulting to `deterministic` when `VERCEL` is set.
 
-### 2. SQLite → Neon Postgres
+### 2. Postgres, required on every target
 
-`Database` becomes an interface with two implementations, chosen by whether `DATABASE_URL` is set.
-Where it is not, SQLite falls back to `/tmp/trader.db` — the one writable path a function has. That
-keeps a deployment working before the database exists, at the cost of state that belongs to a
-single instance and dies with it. `/api/health` reports which one is live.
+*Originally this section was the Vercel-specific half of a dual-backend `Database`: SQLite locally,
+Postgres (falling back to ephemeral `/tmp/trader.db` if `DATABASE_URL` was unset) on Vercel. The
+postgres-everywhere phase deleted SQLite, `SqliteDatabase`, and the `/tmp` fallback outright —
+`Database` is now simply `PostgresDatabase`, required everywhere, and `Settings.require_database_url()`
+raises `ConfigurationError` at startup if `DATABASE_URL` is absent. Nothing below is Vercel-specific
+any more; it is just how the app talks to its one database.*
 
-- `PostgresDatabase` translates `?` placeholders to `$n`, so **every repository's SQL is reused
-  verbatim**. Only three things genuinely differ: `REAL` → `DOUBLE PRECISION`, `rowid` tiebreaks
-  → a `seq BIGSERIAL` column, and `executescript` → a single `execute`.
-- The per-process `asyncio.Lock` guarding trade atomicity is meaningless across instances and is
-  replaced by `pg_advisory_xact_lock` inside the transaction.
-- Neon's **pooled** endpoint is required, which means `statement_cache_size=0` — pgbouncer in
-  transaction mode breaks asyncpg's prepared statements.
+- `PostgresDatabase` translates `?` placeholders to `$n`, so **every repository's SQL stays
+  written the same way** it always has been. `REAL` maps to `DOUBLE PRECISION`, and every table
+  that needs one carries an explicit `seq BIGSERIAL` column as its ordering tiebreaker — there is
+  no more `sequence_column` indirection to pick between a SQLite `rowid` and a Postgres sequence,
+  because there is only one backend.
+- `Database.transaction()` takes a Postgres `pg_advisory_xact_lock` for its duration, on top of
+  the in-process `asyncio.Lock` (`trade_lock`/`watchlist_lock`, created once in `main.py`'s
+  lifespan) the services already hold. The in-process lock only ever saw one process; the
+  advisory lock is what makes that guarantee hold across every instance too — the case Vercel
+  actually creates, by happily starting more than one concurrent invocation, each with its own
+  separate lock object that cannot see the others.
+- A **pooled** endpoint is required wherever the database is Neon, which means
+  `statement_cache_size=0` — pgbouncer in transaction mode breaks asyncpg's prepared statements.
+  The local Docker Postgres is unpooled and does not need this, but the setting is harmless there.
+- A forward-only, idempotent migration runner (`app/db/migrations.py`) now runs after `init_db` and
+  `seed_if_empty` on every startup, on every target. Migration 001 attaches every per-user table to
+  `users_profile` with `ON DELETE CASCADE`.
 
 ### 3. Background tasks go away
 
@@ -112,15 +135,17 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 
 | Variable | Set where | Notes |
 |---|---|---|
-| `VERCEL` | automatic | Selects the computed market source and the `/tmp` database path. |
+| `VERCEL` | automatic | Selects the computed market source. |
 | `LLM_MOCK` | `vercel.json` | `true`. The assistant answers deterministically and costs nothing. |
 | `STREAM_MAX_SECONDS` | `vercel.json` | `55`, just under the 60 s function limit, so the stream closes itself. |
-| `DATABASE_URL` | dashboard | Neon's **pooled** URI. Absent, the app runs on ephemeral `/tmp` SQLite. |
+| `DATABASE_URL` | dashboard | Neon's **pooled** URI. **Required** — there is no fallback any more; absent, the function raises `ConfigurationError` on cold start instead of running on ephemeral storage. |
 
 ### Finishing the setup
 
 1. **Add Postgres.** Vercel dashboard → Storage → Marketplace → Neon (free tier). Copy the pooled
-   connection string — the host contains `-pooler` — into `DATABASE_URL` and redeploy. Confirm with
+   connection string — the host contains `-pooler` — into `DATABASE_URL` and redeploy. This step is
+   no longer optional: without it the deployment does not come up at all, rather than degrading to
+   ephemeral `/tmp` storage as it did before the postgres-everywhere phase. Confirm with
    `curl https://<app>/api/health`.
 2. **Add the real assistant**, if wanted. Put `litellm` in `requirements.txt` and
    `OPENROUTER_API_KEY` in the dashboard, and drop `LLM_MOCK` from `vercel.json`. It adds ~130 MB to

@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.config import Settings
+from app.errors import ConfigurationError
 
 
 class TestFromEnv:
     def test_defaults_with_an_empty_environment(self, monkeypatch):
         """Missing variables fall back to documented defaults."""
-        for name in ("MASSIVE_API_KEY", "OPENROUTER_API_KEY", "LLM_MOCK", "SIM_SEED", "DB_PATH"):
+        for name in ("MASSIVE_API_KEY", "OPENROUTER_API_KEY", "LLM_MOCK", "SIM_SEED"):
             monkeypatch.delenv(name, raising=False)
         s = Settings.from_env()
-        assert s.db_path == Path("db/trader.db")
         assert s.llm_mock is False
         assert s.sim_seed is None
         assert s.sim_tick_ms == 500
@@ -44,30 +42,38 @@ class TestFromEnv:
         monkeypatch.setenv("SIM_SEED", "not-a-number")
         assert Settings.from_env().sim_seed is None
 
-    def test_db_path_override(self, monkeypatch):
-        """DB_PATH relocates the database file."""
-        monkeypatch.setenv("DB_PATH", "/tmp/other.db")
-        assert Settings.from_env().db_path == Path("/tmp/other.db")
-
 
 class TestDerivedProperties:
-    def test_tick_seconds(self, tmp_path):
+    def test_tick_seconds(self):
         """Tick milliseconds convert to seconds for the simulator."""
-        assert Settings(db_path=tmp_path / "d", sim_tick_ms=250).sim_tick_seconds == 0.25
+        assert Settings(sim_tick_ms=250).sim_tick_seconds == 0.25
 
-    def test_market_source_name_is_simulator_without_a_key(self, tmp_path):
+    def test_market_source_name_is_simulator_without_a_key(self):
         """No Massive key means the simulator, matching the market factory."""
-        assert Settings(db_path=tmp_path / "d").market_source_name == "simulator"
+        assert Settings().market_source_name == "simulator"
 
-    def test_market_source_name_ignores_whitespace_only_key(self, tmp_path):
+    def test_market_source_name_ignores_whitespace_only_key(self):
         """A whitespace-only key is treated as absent, as the factory does."""
-        s = Settings(db_path=tmp_path / "d", massive_api_key="   ")
+        s = Settings(massive_api_key="   ")
         assert s.market_source_name == "simulator"
 
-    def test_market_source_name_is_massive_with_a_key(self, tmp_path):
+    def test_market_source_name_is_massive_with_a_key(self):
         """A real key selects the Massive source."""
-        s = Settings(db_path=tmp_path / "d", massive_api_key="abc123")
+        s = Settings(massive_api_key="abc123")
         assert s.market_source_name == "massive"
+
+
+class TestDatabaseUrlIsRequired:
+    def test_missing_database_url_fails_loudly(self, monkeypatch):
+        """A silent ephemeral fallback hides a broken deploy until it matters."""
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        settings = Settings.from_env()
+        with pytest.raises(ConfigurationError, match="DATABASE_URL"):
+            settings.require_database_url()
+
+    def test_present_database_url_passes(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host/db")
+        Settings.from_env().require_database_url()
 
 
 class TestVolatilityMultiplier:

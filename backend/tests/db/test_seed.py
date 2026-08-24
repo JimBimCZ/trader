@@ -36,9 +36,9 @@ class TestSeedIfEmpty:
         rows = await db.fetch_all("SELECT ticker FROM watchlist")
         assert all(row["ticker"] == row["ticker"].strip().upper() for row in rows)
 
-    async def test_respects_configured_initial_cash(self, db: Database, tmp_path):
+    async def test_respects_configured_initial_cash(self, db: Database):
         """The starting balance comes from settings, not a hardcoded constant."""
-        custom = Settings(db_path=tmp_path / "x.db", initial_cash=250.0)
+        custom = Settings(initial_cash=250.0)
         await seed_if_empty(db, custom)
         profile = await db.fetch_one("SELECT cash_balance FROM users_profile WHERE id = 'default'")
         assert profile["cash_balance"] == 250.0
