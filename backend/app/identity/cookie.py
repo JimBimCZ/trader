@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -41,15 +41,21 @@ class SessionCookie:
         if not raw:
             return None
         try:
+            # SignatureExpired must be caught before the broader BadData: it is
+            # a subclass of BadSignature, itself a subclass of BadData, so a
+            # narrower branch below it would never fire.
             payload = self._serializer.loads(raw, max_age=max_age)
         except SignatureExpired:
             return None
-        except BadSignature:
-            # Worth a log line: in volume this is either a secret rotation or
-            # someone probing.
-            logger.warning("Rejected a session cookie with a bad signature")
+        except BadData:
+            # Covers both a bad HMAC (BadSignature) and a payload that won't
+            # decode despite a valid HMAC (BadPayload) -- siblings under
+            # BadData, not a subclass relationship, so both must be caught
+            # here. Worth a log line: in volume this is either a secret
+            # rotation, data corruption, or someone probing.
+            logger.warning("Rejected a session cookie with a bad signature or payload")
             return None
         if not isinstance(payload, dict):
             return None
         uid = payload.get("uid")
-        return uid if isinstance(uid, str) and uid else None
+        return uid if isinstance(uid, str) and uid.strip() else None

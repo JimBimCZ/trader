@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from app.config import Settings
@@ -89,3 +91,40 @@ class TestVolatilityMultiplier:
     def test_invalid_value_falls_back_rather_than_crashing_startup(self, monkeypatch):
         monkeypatch.setenv("SIM_VOL_MULTIPLIER", "very-volatile")
         assert Settings.from_env().sim_vol_multiplier == 1.0
+
+
+class TestSessionSecret:
+    def test_reads_session_secret_when_set(self, monkeypatch):
+        monkeypatch.setenv("SESSION_SECRET", "a-real-secret")
+        assert Settings.from_env().session_secret == "a-real-secret"
+
+    def test_generates_an_ephemeral_secret_and_warns_when_unset(self, monkeypatch, caplog):
+        """No SESSION_SECRET must not silently produce a blank or missing one.
+
+        The warning matters as much as the fallback: there is no session
+        table, so the cookie is the only pointer to a user's row -- an
+        ephemeral secret regenerated on every restart signs out every user
+        and permanently orphans every guest portfolio.
+        """
+        monkeypatch.delenv("SESSION_SECRET", raising=False)
+        with caplog.at_level(logging.WARNING, logger="app.config"):
+            settings = Settings.from_env()
+        assert settings.session_secret
+        assert len(settings.session_secret) > 20
+        assert "SESSION_SECRET" in caplog.text
+        assert "orphan" in caplog.text
+
+    def test_whitespace_only_session_secret_falls_back_to_ephemeral(self, monkeypatch, caplog):
+        """A blank value is as absent as no value at all."""
+        monkeypatch.setenv("SESSION_SECRET", "   ")
+        with caplog.at_level(logging.WARNING, logger="app.config"):
+            settings = Settings.from_env()
+        assert settings.session_secret.strip() == settings.session_secret
+        assert settings.session_secret != ""
+
+    def test_two_ephemeral_secrets_differ(self, monkeypatch):
+        """Otherwise 'ephemeral' would be a lie -- it would be one fixed value."""
+        monkeypatch.delenv("SESSION_SECRET", raising=False)
+        first = Settings.from_env().session_secret
+        second = Settings.from_env().session_secret
+        assert first != second

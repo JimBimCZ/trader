@@ -8,6 +8,7 @@ whole defence.
 from __future__ import annotations
 
 import pytest
+from itsdangerous import URLSafeTimedSerializer
 
 from app.identity.cookie import COOKIE_MAX_AGE, COOKIE_NAME, SessionCookie
 
@@ -54,6 +55,51 @@ class TestRejection:
         cookie = SessionCookie(SECRET)
         signed = cookie.sign("user-abc")
         assert cookie.verify(signed, max_age=-1) is None
+
+    def test_a_value_signed_with_the_right_secret_but_a_different_salt_is_refused(self):
+        """The salt is part of the key derivation, same as the secret is."""
+        other_salt = URLSafeTimedSerializer(SECRET, salt="a-different-salt")
+        signed = other_salt.dumps({"uid": "user-abc"})
+        assert SessionCookie(SECRET).verify(signed) is None
+
+    def test_a_non_dict_payload_is_refused(self):
+        """Valid JSON, validly signed, but not the shape verify() expects."""
+        cookie = SessionCookie(SECRET)
+        signed = cookie._serializer.dumps(["user-abc"])
+        assert cookie.verify(signed) is None
+
+    def test_a_bare_string_payload_is_refused(self):
+        cookie = SessionCookie(SECRET)
+        signed = cookie._serializer.dumps("user-abc")
+        assert cookie.verify(signed) is None
+
+    def test_a_non_string_uid_is_refused(self):
+        cookie = SessionCookie(SECRET)
+        signed = cookie._serializer.dumps({"uid": 12345})
+        assert cookie.verify(signed) is None
+
+    def test_an_empty_string_uid_is_refused(self):
+        cookie = SessionCookie(SECRET)
+        signed = cookie._serializer.dumps({"uid": ""})
+        assert cookie.verify(signed) is None
+
+    def test_a_whitespace_only_uid_is_refused(self):
+        cookie = SessionCookie(SECRET)
+        signed = cookie._serializer.dumps({"uid": "   "})
+        assert cookie.verify(signed) is None
+
+    def test_a_validly_signed_but_undecodable_payload_is_refused(self):
+        """White-box regression test for a real gap: `BadPayload` (raised when
+
+        the HMAC checks out but the payload itself won't base64/JSON-decode)
+        is a sibling of `BadSignature` under `BadData`, not a subclass of it.
+        A handler that only catches `BadSignature` lets this one escape as an
+        unhandled exception instead of returning None.
+        """
+        cookie = SessionCookie(SECRET)
+        signer = cookie._serializer.make_signer()
+        corrupt = signer.sign(b"not-valid-base64-json!!!").decode()
+        assert cookie.verify(corrupt) is None
 
 
 class TestContract:
