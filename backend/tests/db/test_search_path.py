@@ -6,14 +6,12 @@ database, and it is the only reason the app knows the word "schema".
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import asyncpg
 
 from app.db.postgres import PostgresDatabase, normalize_dsn
-
-TEST_DSN = os.environ.get("TEST_DATABASE_URL", "postgresql://trader:trader@localhost:5432/trader")
+from tests.conftest import TEST_DSN
 
 
 class TestSearchPath:

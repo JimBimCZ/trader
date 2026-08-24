@@ -33,8 +33,10 @@ class TestIdempotency:
 
 class TestSeedingSurvivesMigration:
     async def test_a_fresh_database_still_gets_its_watchlist(self, db, settings):
-        """Regression: a migration that creates the profile row makes seed_if_empty
-        return early, leaving a fresh install with cash and no tickers."""
+        """Seeding before migrating (the order `main.py`'s lifespan hard-codes)
+        leaves a fresh install with its full default watchlist, not just cash.
+        Migration 001 depends on this order -- it adds a foreign key from
+        `watchlist.user_id` to a profile row that must already exist."""
         from app.db.seed import seed_if_empty
 
         await seed_if_empty(db, settings)

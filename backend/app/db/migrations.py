@@ -63,5 +63,6 @@ MIGRATIONS: list[str] = [
 async def run_migrations(db: Database) -> None:
     """Apply every migration in order. Safe on every startup."""
     for index, statement in enumerate(MIGRATIONS, start=1):
+        logger.debug("Applying migration %d/%d", index, len(MIGRATIONS))
         await db.execute(statement)
     logger.info("Migrations applied: %d statements", len(MIGRATIONS))

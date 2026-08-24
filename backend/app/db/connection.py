@@ -8,11 +8,7 @@ implementation behind it.
 
 from __future__ import annotations
 
-import logging
-
 from .postgres import PostgresDatabase
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_USER_ID = "default"
 
