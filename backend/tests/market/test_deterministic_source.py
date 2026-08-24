@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.market.deterministic import SESSION_SECONDS, seed_price
@@ -88,3 +90,43 @@ class TestSource:
         source = DeterministicDataSource(cache)
         await source.stop()
         await source.stop()
+
+
+class TestBundleIndependence:
+    """The serverless deployment installs neither numpy nor the Massive client.
+
+    An import outside its branch — even one only reached to test a type — takes
+    startup down there while passing every test on a machine that happens to
+    have the package. These tests remove that asymmetry.
+    """
+
+    @staticmethod
+    def _without(*blocked: str):
+        """A meta-path hook that makes the named packages unimportable."""
+
+        class Blocker:
+            def find_module(self, name, path=None):
+                return self.find_spec(name, path)
+
+            def find_spec(self, name, path=None, target=None):
+                if name.split(".")[0] in blocked:
+                    raise ImportError(f"No module named {name!r}")
+                return None
+
+        return Blocker()
+
+    def test_the_deterministic_path_never_imports_the_simulator(self, monkeypatch):
+        import sys
+
+        from app.config import Settings
+        from app.market.factory import create_market_data_source, create_price_cache
+
+        for module in [m for m in sys.modules if m.startswith(("numpy", "app.market.simulator"))]:
+            monkeypatch.delitem(sys.modules, module, raising=False)
+        monkeypatch.setattr(sys, "meta_path", [self._without("numpy", "massive"), *sys.meta_path])
+
+        settings = Settings(db_path=Path("unused.db"), market_source="deterministic")
+        source = create_market_data_source(create_price_cache(settings), settings)
+
+        assert type(source).__name__ == "DeterministicDataSource"
+        assert "numpy" not in sys.modules

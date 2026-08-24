@@ -59,29 +59,6 @@ def load_local_env() -> None:
     load_dotenv(override=False)
 
 
-def _build_market_source(settings: Settings, price_cache: PriceCache):
-    """Create the market data source, applying the simulator tuning knobs.
-
-    create_market_data_source exposes no configuration, so the simulator's
-    seed and tick rate are applied here rather than by editing the factory.
-    The deterministic source takes the same knobs through its cache, which was
-    already built with them.
-    """
-    source = create_market_data_source(price_cache, settings)
-    # Imported here rather than at module scope: the simulator pulls in numpy,
-    # which the serverless deployment does not install.
-    from .market.simulator import SimulatorDataSource
-
-    if isinstance(source, SimulatorDataSource):
-        return SimulatorDataSource(
-            price_cache=price_cache,
-            update_interval=settings.sim_tick_seconds,
-            seed=settings.sim_seed,
-            vol_multiplier=settings.sim_vol_multiplier,
-        )
-    return source
-
-
 def _build_history_store(settings: Settings, price_cache: PriceCache) -> HistoryStore:
     """The ring buffer, or the computed history that makes it unnecessary."""
     if isinstance(price_cache, DeterministicPriceCache):
@@ -113,7 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     chat_repo = ChatRepository(db)
 
     price_cache: PriceCache = app.state.price_cache
-    source = _build_market_source(settings, price_cache)
+    source = create_market_data_source(price_cache, settings)
     reconciler = TickerReconciler(source, watchlist_repo, positions)
 
     tracked = await reconciler.compute_tracked_tickers()

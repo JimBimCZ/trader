@@ -45,9 +45,14 @@ def create_market_data_source(
     - `MARKET_SOURCE=deterministic` → prices computed from the clock
     - otherwise → the stateful GBM simulator
 
-    Every import is deferred, because the two heavy dependencies belong to
-    branches the serverless deployment never takes: numpy to the simulator and
-    the massive client to the paid data path.
+    Every import is deferred, and stays inside its own branch: numpy belongs to
+    the simulator and the massive client to the paid data path, and neither is
+    installed in the serverless deployment. An import outside a branch — even
+    one only reached to test a type — fails there at startup.
+
+    The simulator's tuning knobs are applied here rather than by the caller,
+    for the same reason: re-wrapping the returned source would mean naming its
+    class, and naming it would mean importing it.
 
     Returns an unstarted source. Caller must await source.start(tickers).
     """
@@ -76,4 +81,9 @@ def create_market_data_source(
     from .simulator import SimulatorDataSource
 
     logger.info("Market data source: GBM Simulator")
-    return SimulatorDataSource(price_cache=price_cache)
+    return SimulatorDataSource(
+        price_cache=price_cache,
+        update_interval=settings.sim_tick_seconds if settings else 0.5,
+        seed=settings.sim_seed if settings else None,
+        vol_multiplier=settings.sim_vol_multiplier if settings else 1.0,
+    )
