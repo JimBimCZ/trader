@@ -7,6 +7,7 @@ Public API:
     open_connection   - open and configure the SQLite connection
     init_db           - create the schema (idempotent)
     seed_if_empty     - write default profile and watchlist on a fresh database
+    run_migrations    - apply forward-only schema migrations (idempotent)
     DEFAULT_USER_ID   - the hardcoded single-user id
     DEFAULT_WATCHLIST - the ten starting tickers
 """
@@ -21,6 +22,7 @@ from .connection import (
     open_connection,
 )
 from .factory import open_database
+from .migrations import run_migrations
 from .seed import DEFAULT_WATCHLIST, seed_if_empty
 
 __all__ = [
@@ -31,5 +33,6 @@ __all__ = [
     "init_db",
     "open_connection",
     "open_database",
+    "run_migrations",
     "seed_if_empty",
 ]

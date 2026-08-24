@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import Settings
-from .db import init_db, open_database, seed_if_empty
+from .db import init_db, open_database, run_migrations, seed_if_empty
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
@@ -80,7 +80,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     db = await open_database(settings)
     await init_db(db)
+    # Seeding first: migration 001 adds foreign keys to users_profile, and every
+    # per-user row must already point at a profile that exists.
     await seed_if_empty(db, settings)
+    await run_migrations(db)
 
     users = UserRepository(db)
     positions = PositionRepository(db)
