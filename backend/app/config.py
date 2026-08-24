@@ -7,10 +7,14 @@ project-root .env exists to read.
 
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 from dataclasses import dataclass
 
 from .errors import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -71,6 +75,10 @@ class Settings:
     watchlist_cap: int = 25
     initial_cash: float = 10_000.0
 
+    #: Signs the session cookie that identifies a user. See `from_env` for
+    #: what happens when it is unset.
+    session_secret: str = ""
+
     # History ring buffer
     history_maxlen: int = 600
     history_poll_seconds: float = 0.5
@@ -127,6 +135,18 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        # A generated secret is correct for local dev and catastrophic in
+        # production: it changes on every restart, which signs out every user
+        # and permanently orphans every guest portfolio, since the cookie is
+        # the only pointer to the row.
+        session_secret = os.environ.get("SESSION_SECRET", "").strip()
+        if not session_secret:
+            session_secret = secrets.token_urlsafe(32)
+            logger.warning(
+                "SESSION_SECRET is not set; generated an ephemeral one. Every "
+                "restart will sign out all users and orphan every guest "
+                "portfolio. Set it before deploying."
+            )
         return cls(
             massive_api_key=os.environ.get("MASSIVE_API_KEY", ""),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
@@ -143,4 +163,5 @@ class Settings:
                 "MARKET_SOURCE", "deterministic" if os.environ.get("VERCEL") else ""
             ).strip(),
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
+            session_secret=session_secret,
         )
