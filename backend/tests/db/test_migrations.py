@@ -115,3 +115,44 @@ class TestForeignKeyGuardIsSchemaScoped:
                 await admin.execute(f'DROP SCHEMA IF EXISTS "{other_schema}" CASCADE')
             finally:
                 await admin.close()
+
+
+class TestMigration002AddsIdentityColumns:
+    async def test_kind_and_last_seen_at_exist_after_migrating(self, db):
+        await run_migrations(db)
+
+        rows = await db.fetch_all(
+            "SELECT column_name, is_nullable, column_default "
+            "FROM information_schema.columns "
+            "WHERE table_name = 'users_profile' AND table_schema = current_schema()"
+        )
+        columns = {row["column_name"]: row for row in rows}
+
+        assert "kind" in columns
+        assert columns["kind"]["is_nullable"] == "NO"
+        assert "guest" in (columns["kind"]["column_default"] or "")
+        assert "last_seen_at" in columns
+        assert columns["last_seen_at"]["is_nullable"] == "NO"
+
+    async def test_kind_rejects_a_value_outside_the_check(self, db):
+        await run_migrations(db)
+        await db.execute(
+            "INSERT INTO users_profile (id, cash_balance, created_at, last_seen_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("check-probe", 10000.0, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+
+        import asyncpg
+
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await db.execute(
+                "UPDATE users_profile SET kind = 'admin' WHERE id = ?", ("check-probe",)
+            )
+
+    async def test_the_kind_seen_index_exists(self, db):
+        await run_migrations(db)
+        rows = await db.fetch_all(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE tablename = 'users_profile' AND schemaname = current_schema()"
+        )
+        assert "idx_users_kind_seen" in {row["indexname"] for row in rows}

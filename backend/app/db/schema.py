@@ -12,7 +12,9 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users_profile (
     id           TEXT PRIMARY KEY,
     cash_balance DOUBLE PRECISION NOT NULL,
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'guest' CHECK (kind IN ('guest','user')),
+    last_seen_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS watchlist (

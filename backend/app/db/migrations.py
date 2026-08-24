@@ -57,6 +57,18 @@ MIGRATIONS: list[str] = [
         _add_user_fk(table)
         for table in ("watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages")
     ),
+    # 002 -- identity columns. ADD COLUMN IF NOT EXISTS is idempotent, and the
+    # CHECK is attached in the same statement so a column can never exist
+    # without it. Neon already has users_profile from phase 1, so CREATE TABLE
+    # IF NOT EXISTS in schema.py cannot deliver these -- this is the gap that
+    # bites on the second deploy rather than the first.
+    "ALTER TABLE users_profile ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL "
+    "DEFAULT 'guest' CHECK (kind IN ('guest','user'))",
+    "ALTER TABLE users_profile ADD COLUMN IF NOT EXISTS last_seen_at TEXT NOT NULL DEFAULT ''",
+    # Backfills the empty default for rows that predate the column, so
+    # last_seen_at is a real timestamp everywhere before anything reads it.
+    "UPDATE users_profile SET last_seen_at = created_at WHERE last_seen_at = ''",
+    "CREATE INDEX IF NOT EXISTS idx_users_kind_seen ON users_profile (kind, last_seen_at)",
 ]
 
 
