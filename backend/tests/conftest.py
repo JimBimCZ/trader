@@ -20,15 +20,33 @@ from app.market import PriceCache
 
 TEST_DSN = os.environ.get("TEST_DATABASE_URL", "postgresql://trader:trader@localhost:5432/trader")
 
-#: The exact shape `db_schema` below hands out. Both the session-scoped sweep and
-#: `_provisioned_schema`'s callers rely on this to recognize their own throwaway
-#: schemas and nothing else -- it must never be loose enough to match "public"
-#: or an application schema.
+#: The exact shape `db_schema` below hands out. The session-scoped sweep relies
+#: on this to recognize its own throwaway schemas and nothing else -- it must
+#: never be loose enough to match "public" or an application schema.
 _TEST_SCHEMA_RE = re.compile(r"^test_[0-9a-f]{12}$")
+
+#: Every disposable schema name this suite generates: `db_schema` below
+#: (`test_<12 hex>`) and `test_search_path.py`'s hand-rolled probes
+#: (`probe_<8 hex>`). `_drop_schema` refuses anything outside this shape, so
+#: "public" or an application schema can never reach a DROP statement through
+#: it -- present caller or future one.
+_DROPPABLE_SCHEMA_RE = re.compile(r"^(test|probe)_[0-9a-f]{6,32}$")
 
 
 async def _drop_schema(dsn: str, schema: str) -> None:
-    """Drop one throwaway schema, tolerating one that was never created."""
+    """Drop one throwaway schema, tolerating one that was never created.
+
+    Refuses, loudly, anything that doesn't match a disposable test/probe
+    schema name -- this is the single chokepoint every fixture and helper in
+    this file drops a schema through, so a mistake here is the one thing that
+    could turn a test run into `DROP SCHEMA public CASCADE` against whatever
+    database `TEST_DATABASE_URL` happens to point at.
+    """
+    if not _DROPPABLE_SCHEMA_RE.match(schema):
+        raise ValueError(
+            f"refusing to drop schema {schema!r}: it does not match a disposable "
+            f"test/probe schema name, so this is almost certainly a mistake"
+        )
     admin = await asyncpg.connect(normalize_dsn(dsn))
     try:
         await admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
@@ -59,10 +77,12 @@ async def _provisioned_schema(dsn: str, schema: str) -> AsyncIterator[PostgresDa
 async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
     """Drop every `test_*` schema matching the fixture-generated pattern.
 
-    Guarded twice: the SQL only selects names starting with `test_`, and the
-    Python-side regex re-checks the full `test_<12 hex chars>` shape before
-    any DROP runs. Neither pass can match "public" or an application schema,
-    so a bug in one layer does not make the other layer dangerous.
+    Guarded three times over: the SQL only selects names starting with
+    `test_`; the Python-side `_TEST_SCHEMA_RE` re-checks the full
+    `test_<12 hex chars>` shape before a name is even considered a match; and
+    the actual DROP runs through `_drop_schema`, which re-validates against
+    its own (slightly looser, to also cover `probe_*`) pattern. No single
+    layer failing can turn this into a `DROP SCHEMA public`.
 
     Returns the names actually dropped, so callers (and tests) can assert on
     what happened rather than just on "it didn't crash".
@@ -73,15 +93,15 @@ async def sweep_orphaned_test_schemas(dsn: str) -> list[str]:
             r"SELECT schema_name FROM information_schema.schemata "
             r"WHERE schema_name LIKE 'test\_%' ESCAPE '\'"
         )
-        dropped: list[str] = []
-        for row in rows:
-            name = row["schema_name"]
-            if _TEST_SCHEMA_RE.match(name):
-                await admin.execute(f'DROP SCHEMA IF EXISTS "{name}" CASCADE')
-                dropped.append(name)
-        return dropped
+        matches = [row["schema_name"] for row in rows if _TEST_SCHEMA_RE.match(row["schema_name"])]
     finally:
         await admin.close()
+
+    # Dropped through _drop_schema, not inline, so this goes through the same
+    # chokepoint guard as every other schema this suite deletes.
+    for name in matches:
+        await _drop_schema(dsn, name)
+    return matches
 
 
 @pytest.fixture(scope="session", autouse=True)
