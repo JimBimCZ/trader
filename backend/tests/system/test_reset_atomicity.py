@@ -49,9 +49,7 @@ def observed_profile_during_reset(settings, monkeypatch):
 
 
 class TestResetIsAtomic:
-    def test_the_profile_is_never_committed_absent(
-        self, api_client, observed_profile_during_reset
-    ):
+    def test_the_profile_is_never_committed_absent(self, api_client, observed_profile_during_reset):
         response = api_client.post("/api/reset")
         assert response.status_code == 200
 
