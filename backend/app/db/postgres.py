@@ -145,11 +145,26 @@ class PostgresDatabase:
                     _current.reset(token)
 
     async def initialize_schema(self) -> None:
-        async with self._pool.acquire() as conn:
+        # Goes through _connection(), not a fresh acquire, so a caller that
+        # wraps this in transaction() gets schema creation on the same
+        # connection -- and under the same advisory lock -- as whatever runs
+        # after it. Outside a transaction() block this is unchanged: one
+        # connection borrowed from the pool for the duration of the call.
+        async with self._connection() as conn:
             if self._search_path:
                 # The pool's search_path names it, but naming a schema does not
                 # create it, and CREATE TABLE will not create it either.
-                await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self._search_path}"')
+                #
+                # Belt-and-braces, not a live fix: an embedded `"` here could
+                # break out of the quoted identifier, but self._search_path is
+                # also passed as server_settings={"search_path": ...} at
+                # connect() above, and asyncpg validates that value -- as
+                # search_path list syntax -- before this method ever runs, so
+                # every payload that would inject here is already rejected
+                # earlier. Escaping it anyway costs nothing and doesn't rely
+                # on that other validation staying in place.
+                escaped = self._search_path.replace('"', '""')
+                await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{escaped}"')
             await conn.execute(SCHEMA_SQL)
         logger.info("Postgres schema ready")
 

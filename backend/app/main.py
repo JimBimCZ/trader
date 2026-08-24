@@ -79,11 +79,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
 
     db = await open_database(settings)
-    await init_db(db)
-    # Seeding first: migration 001 adds foreign keys to users_profile, and every
-    # per-user row must already point at a profile that exists.
-    await seed_if_empty(db, settings)
-    await run_migrations(db)
+    try:
+        # Wrapped in one transaction, holding the cross-instance advisory
+        # lock for its whole duration: Vercel starts more than one instance
+        # concurrently, and each runs this same sequence on cold start.
+        # Un-locked, two instances race three separate check-then-act steps
+        # (CREATE TABLE IF NOT EXISTS, the seed SELECT-then-INSERT, and the
+        # ADD CONSTRAINT existence check) and one loses with a
+        # UniqueViolationError / DuplicateObjectError instead of just
+        # waiting its turn. ADD CONSTRAINT is transactional in Postgres, so
+        # a transaction is sufficient -- no separate advisory-lock call
+        # needed beyond what transaction() already takes.
+        # Seeding must still precede migrating: migration 001 adds foreign
+        # keys to users_profile, and every per-user row must already point
+        # at a profile that exists.
+        async with db.transaction():
+            await init_db(db)
+            await seed_if_empty(db, settings)
+            await run_migrations(db)
+    except Exception:
+        # Startup failed before the try/finally below (which only starts at
+        # the yield) ever begins, so nothing else closes this pool -- do it
+        # here or a failed cold start leaks it for the life of the frozen
+        # instance.
+        await db.close()
+        raise
 
     users = UserRepository(db)
     positions = PositionRepository(db)
