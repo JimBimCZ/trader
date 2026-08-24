@@ -19,30 +19,20 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import Settings
-from .db import init_db, open_database, run_migrations, seed_if_empty
+from .db import init_db, open_database, run_migrations
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
 from .identity import SessionCookie, UserStore
-from .llm import ActionExecutor, ChatRepository, ChatService, create_chat_client
+from .llm import create_chat_client
 from .llm import router as chat_module
 from .market import PriceCache, create_market_data_source, create_price_cache, create_stream_router
 from .market.deterministic_source import DeterministicPriceCache
 from .portfolio import router as portfolio_module
-from .portfolio.repository import (
-    PositionRepository,
-    SnapshotRepository,
-    TradeRepository,
-    UserRepository,
-)
-from .portfolio.service import TradeService
 from .portfolio.snapshot_writer import SnapshotWriter
 from .reconcile import TickerReconciler
 from .system import router as system_module
-from .system.service import ResetService
 from .watchlist import router as watchlist_module
-from .watchlist.repository import WatchlistRepository
-from .watchlist.service import WatchlistService
 
 logger = logging.getLogger(__name__)
 
@@ -101,30 +91,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Wrapped in one transaction, holding the cross-instance advisory
         # lock for its whole duration: Vercel starts more than one instance
         # concurrently, and each runs this same sequence on cold start.
-        # Un-locked, two instances race three separate check-then-act steps
-        # (CREATE TABLE IF NOT EXISTS, the seed SELECT-then-INSERT, and the
-        # ADD CONSTRAINT existence check) and one loses with a
-        # UniqueViolationError / DuplicateObjectError instead of just
+        # Un-locked, two instances race two separate check-then-act steps
+        # (CREATE TABLE IF NOT EXISTS and the ADD CONSTRAINT existence
+        # check) and one loses with a DuplicateObjectError instead of just
         # waiting its turn. ADD CONSTRAINT is transactional in Postgres, so
         # a transaction is sufficient -- no separate advisory-lock call
         # needed beyond what transaction() already takes.
-        # Seeding must still precede migrating: migration 001 adds foreign
-        # keys to users_profile, and every per-user row must already point
-        # at a profile that exists.
+        # Nothing is seeded here any more: a fresh database has no users at
+        # all until the first request mints one, because there is no "the"
+        # user to seed.
         async with db.transaction():
             await init_db(db)
-            await seed_if_empty(db, settings)
             await run_migrations(db)
 
         app.state.user_store = UserStore(db, settings)
         app.state.session_cookie = SessionCookie(settings.session_secret)
-
-        users = UserRepository(db)
-        positions = PositionRepository(db)
-        trades = TradeRepository(db)
-        snapshots = SnapshotRepository(db)
-        watchlist_repo = WatchlistRepository(db)
-        chat_repo = ChatRepository(db)
 
         price_cache: PriceCache = app.state.price_cache
         source = create_market_data_source(price_cache, settings)
@@ -145,37 +126,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await collector.start()
             stack.push_async_callback(collector.stop)
 
+        # Process-wide, not per request: they exist to order concurrent
+        # writes within one instance, which is precisely what a lock created
+        # fresh for each request could not do.
         trade_lock = asyncio.Lock()
         watchlist_lock = asyncio.Lock()
-
-        trade_service = TradeService(
-            db, users, positions, trades, snapshots, price_cache, settings, reconciler, trade_lock
-        )
-        watchlist_service = WatchlistService(
-            db, watchlist_repo, reconciler, watchlist_lock, settings.watchlist_cap
-        )
-        chat_service = ChatService(
-            chat_repo,
-            trade_service,
-            watchlist_service,
-            create_chat_client(settings),
-            ActionExecutor(trade_service, watchlist_service),
-            settings,
-        )
-        reset_service = ResetService(
-            db,
-            settings,
-            users,
-            positions,
-            trades,
-            snapshots,
-            watchlist_repo,
-            chat_repo,
-            reconciler,
-            history_store,
-            trade_lock,
-            watchlist_lock,
-        )
 
         snapshot_writer = SnapshotWriter(
             db,
@@ -191,10 +146,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.db = db
         app.state.source = source
         app.state.history_store = history_store
-        app.state.trade_service = trade_service
-        app.state.watchlist_service = watchlist_service
-        app.state.chat_service = chat_service
-        app.state.reset_service = reset_service
+        app.state.reconciler = reconciler
+        app.state.chat_client = create_chat_client(settings)
+        app.state.trade_lock = trade_lock
+        app.state.watchlist_lock = watchlist_lock
 
         logger.info("Startup complete: %d tickers tracked", len(tracked))
         yield

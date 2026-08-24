@@ -9,10 +9,11 @@ message under neither of the locks `reset()` holds and outside
 landing there now raises ForeignKeyViolationError and surfaces as a 500.
 Before the foreign keys existed the same race silently wrote an orphan row.
 
-This does not race anything: it observes from a second connection at the one
-instant that matters. If the delete has been committed by the time
-`seed_if_empty` is called, a separate connection sees the profile gone --
-which is exactly the pre-fix behaviour and what this asserts against.
+Reset no longer deletes the profile at all -- it updates the cash balance in
+place, because deleting it would cascade the user out of existence and
+invalidate the cookie that is the only pointer to their rows. This test still
+observes the window, from a second connection at the one instant that
+matters, so a return to delete-then-recreate cannot pass unnoticed.
 """
 
 from __future__ import annotations
@@ -28,23 +29,23 @@ from app.db.postgres import normalize_dsn
 def observed_profile_during_reset(settings, monkeypatch):
     """Record whether the profile is visible to another connection mid-reset."""
     seen: list[int] = []
-    real_seed = reset_module.seed_if_empty
+    real_seed = reset_module.seed_user
 
-    async def observing_seed(db, config):
+    async def observing_seed(db, config, user_id):
         observer = await asyncpg.connect(
             normalize_dsn(settings.database_url),
             server_settings={"search_path": settings.db_schema},
         )
         try:
             row = await observer.fetchrow(
-                "SELECT count(*) AS n FROM users_profile WHERE id = 'default'"
+                "SELECT count(*) AS n FROM users_profile WHERE id = $1", user_id
             )
             seen.append(row["n"])
         finally:
             await observer.close()
-        return await real_seed(db, config)
+        return await real_seed(db, config, user_id)
 
-    monkeypatch.setattr(reset_module, "seed_if_empty", observing_seed)
+    monkeypatch.setattr(reset_module, "seed_user", observing_seed)
     return seen
 
 
@@ -53,7 +54,7 @@ class TestResetIsAtomic:
         response = api_client.post("/api/reset")
         assert response.status_code == 200
 
-        assert observed_profile_during_reset, "seed_if_empty was never reached"
+        assert observed_profile_during_reset, "seed_user was never reached"
         assert observed_profile_during_reset == [1], (
             "another connection saw users_profile empty during reset -- the "
             "delete was committed before the re-seed, so a concurrent "

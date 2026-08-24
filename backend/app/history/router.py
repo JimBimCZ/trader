@@ -18,8 +18,10 @@ async def get_history(ticker: str, store: HistoryStoreDep, user: CurrentUserDep)
     Seeds charts on first paint. Timestamps are Unix float seconds, matching
     the SSE payload rather than the ISO strings used elsewhere.
     """
-    # `user` is resolved for its side effects here -- minting a guest and
-    # setting the session cookie. Task 6 scopes the service to it.
+    # The ring buffer is global -- one price series per ticker, shared by
+    # everyone -- so `user` is resolved purely for its side effects:
+    # minting a guest and setting the session cookie on a first visit
+    # that happens to land here.
     del user
     canonical = validate_ticker(ticker)
     points = store.get(canonical)

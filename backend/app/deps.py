@@ -1,8 +1,11 @@
 """FastAPI dependencies.
 
-Services are constructed once during startup and stored on `app.state`; these
-accessors hand them to route handlers. Keeping construction in the lifespan
-and lookup here means no module-level globals and no import-time side effects.
+Services are built per request, scoped to the caller, rather than once during
+startup: the user id is only known once a request arrives, and building here
+is what makes it a required argument on every repository below. Everything
+that is genuinely shared -- the pool, the price cache, the market source, the
+reconciler, the two write locks -- still lives on `app.state` and is handed
+to each fresh service.
 """
 
 from __future__ import annotations
@@ -12,34 +15,15 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, Request, Response
 
 from .identity import COOKIE_MAX_AGE, COOKIE_NAME, SessionCookie, User, UserStore
+from .llm import ActionExecutor, ChatRepository, ChatService
+from .portfolio.service import build_trade_service
+from .system.service import ResetService
+from .watchlist.repository import WatchlistRepository
+from .watchlist.service import WatchlistService
 
 if TYPE_CHECKING:
     from .history import HistoryStore
-    from .llm.service import ChatService
     from .portfolio.service import TradeService
-    from .watchlist.service import WatchlistService
-
-
-def get_trade_service(request: Request) -> TradeService:
-    return request.app.state.trade_service
-
-
-def get_watchlist_service(request: Request) -> WatchlistService:
-    return request.app.state.watchlist_service
-
-
-def get_chat_service(request: Request) -> ChatService:
-    return request.app.state.chat_service
-
-
-def get_history_store(request: Request) -> HistoryStore:
-    return request.app.state.history_store
-
-
-TradeServiceDep = Annotated["TradeService", Depends(get_trade_service)]
-WatchlistServiceDep = Annotated["WatchlistService", Depends(get_watchlist_service)]
-ChatServiceDep = Annotated["ChatService", Depends(get_chat_service)]
-HistoryStoreDep = Annotated["HistoryStore", Depends(get_history_store)]
 
 
 async def get_current_user(request: Request, response: Response) -> User:
@@ -87,3 +71,85 @@ def _set_session_cookie(
 
 
 CurrentUserDep = Annotated["User", Depends(get_current_user)]
+
+
+def get_trade_service(request: Request, user: CurrentUserDep) -> TradeService:
+    """Build a TradeService scoped to the calling user.
+
+    Per-request construction is what makes the user id a required argument
+    everywhere below it. The pool, price cache, source, reconciler and locks
+    are shared; only the repositories are per-user.
+    """
+    state = request.app.state
+    return build_trade_service(
+        state.db,
+        state.settings,
+        state.price_cache,
+        user.id,
+        reconciler=state.reconciler,
+        lock=state.trade_lock,
+    )
+
+
+TradeServiceDep = Annotated["TradeService", Depends(get_trade_service)]
+
+
+def get_watchlist_service(request: Request, user: CurrentUserDep) -> WatchlistService:
+    state = request.app.state
+    return WatchlistService(
+        state.db,
+        WatchlistRepository(state.db, user.id),
+        state.reconciler,
+        state.watchlist_lock,
+        state.settings.watchlist_cap,
+    )
+
+
+WatchlistServiceDep = Annotated["WatchlistService", Depends(get_watchlist_service)]
+
+
+def get_chat_service(
+    request: Request,
+    user: CurrentUserDep,
+    trades: TradeServiceDep,
+    watchlist: WatchlistServiceDep,
+) -> ChatService:
+    """Depends on the two service dependencies rather than rebuilding them, so
+    a chat-driven trade goes through the same locked service a manual one does.
+    """
+    state = request.app.state
+    return ChatService(
+        ChatRepository(state.db, user.id),
+        trades,
+        watchlist,
+        state.chat_client,
+        ActionExecutor(trades, watchlist),
+        state.settings,
+    )
+
+
+ChatServiceDep = Annotated["ChatService", Depends(get_chat_service)]
+
+
+def get_reset_service(request: Request, user: CurrentUserDep) -> ResetService:
+    """Build a ResetService that can only wipe the caller's own rows."""
+    state = request.app.state
+    return ResetService(
+        state.db,
+        state.settings,
+        user.id,
+        state.reconciler,
+        state.history_store,
+        state.trade_lock,
+        state.watchlist_lock,
+    )
+
+
+ResetServiceDep = Annotated["ResetService", Depends(get_reset_service)]
+
+
+def get_history_store(request: Request) -> HistoryStore:
+    return request.app.state.history_store
+
+
+HistoryStoreDep = Annotated["HistoryStore", Depends(get_history_store)]

@@ -15,6 +15,7 @@ import pytest
 from app.db import init_db
 from app.db.migrations import MIGRATIONS, run_migrations
 from app.db.postgres import PostgresDatabase, normalize_dsn
+from tests.conftest import create_seeded_user
 
 PER_USER_TABLES = ["watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages"]
 
@@ -32,14 +33,12 @@ class TestIdempotency:
 
 
 class TestSeedingSurvivesMigration:
-    async def test_a_fresh_database_still_gets_its_watchlist(self, db, settings):
-        """Seeding before migrating (the order `main.py`'s lifespan hard-codes)
-        leaves a fresh install with its full default watchlist, not just cash.
-        Migration 001 depends on this order -- it adds a foreign key from
-        `watchlist.user_id` to a profile row that must already exist."""
-        from app.db.seed import seed_if_empty
-
-        await seed_if_empty(db, settings)
+    async def test_a_seeded_user_still_gets_their_watchlist(self, db, settings):
+        """Seeding a user before migrating leaves them their full default
+        watchlist, not just cash. Migration 001 depends on that order -- it
+        adds a foreign key from `watchlist.user_id` to a profile row that must
+        already exist."""
+        await create_seeded_user(db, settings, "alice")
         await run_migrations(db)
 
         row = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
@@ -67,14 +66,12 @@ class TestForeignKeys:
 
     async def test_deleting_a_user_removes_their_rows(self, db, settings):
         """This cascade is what makes guest expiry a single DELETE."""
-        from app.db.seed import seed_if_empty
-
-        await seed_if_empty(db, settings)
+        await create_seeded_user(db, settings, "alice")
         await run_migrations(db)
         before = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert before["n"] == 10
 
-        await db.execute("DELETE FROM users_profile WHERE id = ?", ("default",))
+        await db.execute("DELETE FROM users_profile WHERE id = ?", ("alice",))
 
         after = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert after["n"] == 0

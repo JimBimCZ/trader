@@ -1,4 +1,4 @@
-"""Database initialization and the shared user id.
+"""Database initialization.
 
 One implementation remains: `PostgresDatabase`. `Database` is kept as a name
 so the repositories' type hints read as an intent ("a database") rather than
@@ -9,8 +9,6 @@ implementation behind it.
 from __future__ import annotations
 
 from .postgres import PostgresDatabase
-
-DEFAULT_USER_ID = "default"
 
 #: The only implementation. Kept as an alias so call sites read clearly.
 Database = PostgresDatabase

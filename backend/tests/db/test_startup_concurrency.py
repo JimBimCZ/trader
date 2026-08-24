@@ -1,14 +1,18 @@
 """Regression coverage for Important #2: concurrent cold starts used to race.
 
-`init_db`, `seed_if_empty`, and `run_migrations` are each a check-then-act
-step (`CREATE TABLE IF NOT EXISTS`, a SELECT-then-INSERT, and an
-existence-checked `ADD CONSTRAINT`) with no atomicity across the three.
-Two instances of the app starting at once -- the normal case on a platform
-that starts more than one invocation concurrently -- used to race them:
-`main.py`'s lifespan now wraps the sequence in `db.transaction()`, which
-takes the cross-instance advisory lock for its whole duration and serializes
-the second instance behind the first instead of letting both run the same
-check-then-act step at once.
+`init_db` and `run_migrations` are each a check-then-act step
+(`CREATE TABLE IF NOT EXISTS` and an existence-checked `ADD CONSTRAINT`) with
+no atomicity across the two. Two instances of the app starting at once -- the
+normal case on a platform that starts more than one invocation concurrently
+-- used to race them: `main.py`'s lifespan now wraps the sequence in
+`db.transaction()`, which takes the cross-instance advisory lock for its whole
+duration and serializes the second instance behind the first instead of
+letting both run the same check-then-act step at once.
+
+Startup no longer seeds anything -- a fresh database has no users until the
+first request mints one -- so the SELECT-then-INSERT that was the third racing
+step is gone. `UserStore.mint_guest` is the concurrent-write path now, and it
+inserts under a primary key rather than checking first.
 
 This test exercises exactly that wrapped sequence with two independent
 `PostgresDatabase` connections against one shared schema, run concurrently
@@ -25,18 +29,17 @@ import asyncio
 import uuid
 
 from app.config import Settings
-from app.db import init_db, run_migrations, seed_if_empty
+from app.db import init_db, run_migrations
 from app.db.postgres import PostgresDatabase
-from tests.conftest import TEST_DSN, _drop_schema
+from tests.conftest import TEST_DSN, _drop_schema, create_seeded_user
 
 
-async def _start(schema: str, settings: Settings) -> None:
+async def _start(schema: str) -> None:
     """Mirrors main.py's lifespan: open a pool, then run the wrapped sequence."""
     db = await PostgresDatabase.connect(TEST_DSN, search_path=schema)
     try:
         async with db.transaction():
             await init_db(db)
-            await seed_if_empty(db, settings)
             await run_migrations(db)
     finally:
         await db.close()
@@ -48,20 +51,26 @@ class TestConcurrentStartupIsSerialized:
         settings = Settings(database_url=TEST_DSN, db_schema=schema, initial_cash=10_000.0)
 
         try:
-            results = await asyncio.gather(
-                _start(schema, settings), _start(schema, settings), return_exceptions=True
-            )
+            results = await asyncio.gather(_start(schema), _start(schema), return_exceptions=True)
             failures = [r for r in results if isinstance(r, BaseException)]
             assert not failures, f"concurrent startup raised: {failures!r}"
 
             admin = await PostgresDatabase.connect(TEST_DSN, search_path=schema)
             try:
-                profiles = await admin.fetch_one("SELECT COUNT(*) AS n FROM users_profile")
+                # Both instances ran the same migration; exactly one set of
+                # foreign keys exists, and a user seeded through the store
+                # lands cleanly on top of it -- proof the second instance
+                # waited rather than re-adding a constraint that was already
+                # halfway there.
+                constraints = await admin.fetch_one(
+                    "SELECT COUNT(*) AS n FROM pg_constraint c "
+                    "JOIN pg_namespace n ON n.oid = c.connamespace "
+                    "WHERE c.contype = 'f' AND n.nspname = current_schema()"
+                )
+                assert constraints["n"] == 5
+
+                await create_seeded_user(admin, settings, "alice")
                 watchlist = await admin.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
-                # Exactly one profile and one full watchlist, not two of
-                # either -- proof the second instance saw the first's
-                # committed seed rather than racing its own SELECT-then-INSERT.
-                assert profiles["n"] == 1
                 assert watchlist["n"] == 10
             finally:
                 await admin.close()

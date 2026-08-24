@@ -236,6 +236,9 @@ class TestWriteSnapshotIfStale:
     is naturally scoped to a user actually looking at the app."""
 
     async def test_writes_when_there_is_no_snapshot_yet(self, services):
+        # A seeded user already owns the t=0 point, so clearing it is what
+        # actually produces the "nothing recorded yet" case being tested.
+        await services.snapshots.delete_all()
         assert await services.snapshots.newest_recorded_at() is None
         assert await services.trade_service.write_snapshot_if_stale() is True
         assert await services.snapshots.newest_recorded_at() is not None
@@ -253,10 +256,11 @@ class TestWriteSnapshotIfStale:
         await services.db.execute(
             "UPDATE portfolio_snapshots SET recorded_at = '2020-01-01T00:00:00Z'"
         )
+        before = len(await services.trade_service.get_history())
 
         assert await services.trade_service.write_snapshot_if_stale() is True
 
-        assert len(await services.trade_service.get_history()) == 2
+        assert len(await services.trade_service.get_history()) == before + 1
 
 
 class TestBuildTradeService:
@@ -270,10 +274,11 @@ class TestBuildTradeService:
         user = await store.mint_guest()
         service = build_trade_service(seeded_db, settings, price_cache, user.id)
 
-        assert await service.get_history() == []
-        await service.write_snapshot()
+        # One point already: minting seeds the t=0 snapshot.
         assert len(await service.get_history()) == 1
+        await service.write_snapshot()
+        assert len(await service.get_history()) == 2
 
-        # Nothing leaks onto the default user's own snapshot history.
-        default_service = build_trade_service(seeded_db, settings, price_cache, "default")
-        assert await default_service.get_history() == []
+        # Nothing leaks onto anybody else's snapshot history.
+        stranger = build_trade_service(seeded_db, settings, price_cache, "stranger")
+        assert await stranger.get_history() == []

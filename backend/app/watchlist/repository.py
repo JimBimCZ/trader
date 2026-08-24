@@ -5,13 +5,13 @@ from __future__ import annotations
 import uuid
 
 from ..clock import utcnow_iso
-from ..db import DEFAULT_USER_ID, Database
+from ..db import Database
 
 
 class WatchlistRepository:
     """Tickers the user is watching, ordered by when they were added."""
 
-    def __init__(self, db: Database, user_id: str = DEFAULT_USER_ID) -> None:
+    def __init__(self, db: Database, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from .db import Database
+from .db import DEFAULT_WATCHLIST, Database
 from .errors import MarketCapacityFullError
 from .market import MarketDataSource
 from .portfolio.models import EPSILON
@@ -40,6 +40,13 @@ class TickerReconciler:
 
         Expired guests are deleted rows, so they drop out of this query on
         their own -- no liveness filter is needed.
+
+        With nobody in the database the union is empty, which would leave the
+        feed dark: a fresh deployment tracks nothing, reports `degraded`, and
+        hands the first visitor a watchlist with no prices in it. The default
+        watchlist is the floor instead -- it is exactly what the next minted
+        guest will be seeded with, so keeping it warm is keeping the app
+        ready rather than tracking something speculative.
         """
         rows = await self._db.fetch_all(
             "SELECT DISTINCT ticker FROM watchlist "
@@ -47,7 +54,7 @@ class TickerReconciler:
             "SELECT DISTINCT ticker FROM positions WHERE quantity > ?",
             (EPSILON,),
         )
-        return sorted(row["ticker"] for row in rows)
+        return sorted(row["ticker"] for row in rows) or sorted(DEFAULT_WATCHLIST)
 
     async def ensure_tracked(self, ticker: str) -> None:
         """Start tracking a ticker if it is not already. Idempotent."""

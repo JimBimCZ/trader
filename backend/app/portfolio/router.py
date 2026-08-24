@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from ..deps import CurrentUserDep, TradeServiceDep
+from ..deps import TradeServiceDep
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -23,11 +23,8 @@ class TradeRequest(BaseModel):
 
 
 @router.get("")
-async def get_portfolio(request: Request, service: TradeServiceDep, user: CurrentUserDep) -> dict:
+async def get_portfolio(request: Request, service: TradeServiceDep) -> dict:
     """Current cash, positions priced live, and totals."""
-    # `user` is resolved for its side effects here -- minting a guest and
-    # setting the session cookie. Task 6 scopes the service to it.
-    del user
     if request.app.state.settings.serverless:
         # No background task runs between requests on a serverless
         # deployment, so the periodic snapshot moves onto the read that is
@@ -38,11 +35,8 @@ async def get_portfolio(request: Request, service: TradeServiceDep, user: Curren
 
 
 @router.post("/trade")
-async def execute_trade(body: TradeRequest, service: TradeServiceDep, user: CurrentUserDep) -> dict:
+async def execute_trade(body: TradeRequest, service: TradeServiceDep) -> dict:
     """Execute a market order at the current cached price."""
-    # `user` is resolved for its side effects here -- minting a guest and
-    # setting the session cookie. Task 6 scopes the service to it.
-    del user
     result = await service.execute_trade(body.ticker, body.side, body.quantity)
     return result.to_dict()
 
@@ -50,12 +44,8 @@ async def execute_trade(body: TradeRequest, service: TradeServiceDep, user: Curr
 @router.get("/history")
 async def get_history(
     service: TradeServiceDep,
-    user: CurrentUserDep,
     limit: Annotated[int, Query(ge=1, le=MAX_HISTORY_LIMIT)] = 500,
 ) -> dict:
     """Portfolio value snapshots over time, oldest first."""
-    # `user` is resolved for its side effects here -- minting a guest and
-    # setting the session cookie. Task 6 scopes the service to it.
-    del user
     snapshots = await service.get_history(limit=limit)
     return {"snapshots": [s.to_dict() for s in snapshots]}

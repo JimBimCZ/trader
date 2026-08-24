@@ -22,11 +22,12 @@ def _writer(services, **kwargs) -> SnapshotWriter:
 
 class TestSnapshotWriter:
     async def test_writes_immediately_on_start(self, services):
-        """A point at t=0 means the P&L chart is never empty on first load."""
+        """The first interval must not be dead time on a long interval."""
+        before = len(await services.trade_service.get_history())
         writer = _writer(services, interval=60)
         await writer.start()
         try:
-            assert len(await services.trade_service.get_history()) == 1
+            assert len(await services.trade_service.get_history()) == before + 1
         finally:
             await writer.stop()
 
@@ -86,6 +87,9 @@ class TestSnapshotWriter:
 class TestPruning:
     async def test_prunes_snapshots_older_than_the_window(self, services):
         """Retention bounds a table that otherwise grows forever."""
+        # The seeded t=0 point would be pruned along with the old one and
+        # muddy the count, so this starts from an empty history.
+        await services.snapshots.delete_all()
         await services.snapshots.insert(10_000.0)
         await services.db.commit()
         await services.db.execute(
@@ -102,6 +106,7 @@ class TestPruning:
         assert [s.total_value for s in remaining] == [10_500.0]
 
     async def test_keeps_recent_snapshots(self, services):
+        await services.snapshots.delete_all()
         await services.snapshots.insert(10_000.0)
         await services.db.commit()
         assert await services.trade_service.prune_snapshots(retention_days=7) == 0
@@ -126,7 +131,8 @@ class TestCoversActiveUsers:
                 "SELECT total_value FROM portfolio_snapshots WHERE user_id = ?",
                 (user.id,),
             )
-            assert len(rows) == 1
+            # The seeded t=0 point, plus the one this pass wrote.
+            assert len(rows) == 2
 
     async def test_an_idle_user_gets_no_snapshot(self, seeded_db, settings, priced_cache):
         """Writing for every user forever turns a dormant demo into a growing
@@ -140,6 +146,9 @@ class TestCoversActiveUsers:
             "UPDATE users_profile SET last_seen_at = ? WHERE id = ?",
             ("2020-01-01T00:00:00+00:00", idle.id),
         )
+        # Minting seeded a t=0 point; deleting it means anything found below
+        # was written by this pass rather than left over from the seed.
+        await seeded_db.execute("DELETE FROM portfolio_snapshots WHERE user_id = ?", (idle.id,))
         writer = SnapshotWriter(seeded_db, settings, store, priced_cache)
 
         await writer.write_for_active_users()
@@ -173,4 +182,6 @@ class TestCoversActiveUsers:
             "SELECT total_value FROM portfolio_snapshots WHERE user_id = ?",
             (healthy.id,),
         )
-        assert len(rows) == 1
+        # The seeded t=0 point, plus the one written despite the other user
+        # raising mid-pass.
+        assert len(rows) == 2

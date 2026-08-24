@@ -13,12 +13,18 @@ import asyncpg
 import pytest
 import pytest_asyncio
 
+from app.clock import utcnow_iso
 from app.config import Settings
-from app.db import Database, init_db, run_migrations, seed_if_empty
+from app.db import Database, init_db, run_migrations, seed_user
 from app.db.postgres import PostgresDatabase, normalize_dsn
 from app.market import PriceCache
 
 TEST_DSN = os.environ.get("TEST_DATABASE_URL", "postgresql://trader:trader@localhost:5432/trader")
+
+#: The user the service-level fixtures are scoped to. Named explicitly rather
+#: than defaulted anywhere: a repository built without a user id now fails at
+#: construction, which is the whole point of the scoping.
+TEST_USER_ID = "test_user"
 
 #: Every shape this suite actually generates: `db_schema` below (`test_<12
 #: hex>`) and test_search_path.py's probes (`probe_<8 hex>`). The
@@ -173,17 +179,38 @@ async def db(settings: Settings):
         yield database
 
 
+async def create_seeded_user(db: Database, settings: Settings, user_id: str) -> None:
+    """Create one profile row and seed it, exactly as `UserStore.mint_guest`.
+
+    Tests that want a known user id rather than a minted `guest_<uuid>` go
+    through this; the profile must exist before the watchlist rows, which
+    carry a foreign key to it.
+    """
+    now = utcnow_iso()
+    async with db.transaction():
+        await db.execute(
+            "INSERT INTO users_profile (id, cash_balance, created_at, kind, last_seen_at) "
+            "VALUES (?, ?, ?, 'guest', ?)",
+            (user_id, settings.initial_cash, now, now),
+        )
+        await seed_user(db, settings, user_id)
+
+
 @pytest_asyncio.fixture
 async def seeded_db(db: Database, settings: Settings):
-    """An initialized, seeded, migrated database -- production's exact shape.
+    """An initialized, migrated database holding one seeded `TEST_USER_ID`.
 
     Migrations run after seeding, matching main.py's lifespan order: migration
     001 adds foreign keys to users_profile, so every per-user row must already
     point at a profile that exists. The bare `db` fixture deliberately stays
     unmigrated; it models "schema only" for the db-layer tests that assert on
     what initialize_schema alone produces.
+
+    Production seeds nothing at startup any more -- a fresh database has no
+    users until the first request mints one -- so this fixture stands in for
+    that first request rather than for the lifespan.
     """
-    await seed_if_empty(db, settings)
+    await create_seeded_user(db, settings, TEST_USER_ID)
     await run_migrations(db)
     return db
 
@@ -209,9 +236,17 @@ async def services(seeded_db, settings: Settings, price_cache: PriceCache):
     """Fully wired services against a seeded temp database and a stub source."""
     from tests.conftest_services import Services
 
-    built = Services(seeded_db, settings, price_cache)
+    built = Services(seeded_db, settings, price_cache, TEST_USER_ID)
     await built.reconciler.reconcile()
     return built
+
+
+#: The TestClient's default base URL is `http://testserver`, and the session
+#: cookie is `Secure` on every hostname except localhost -- so under the
+#: default the browser-side jar refuses to send it back over plain http and
+#: every request mints a fresh guest. Speaking as localhost is what production
+#: does over http too, and it is the only way these clients hold a session.
+CLIENT_BASE_URL = "http://localhost"
 
 
 @pytest.fixture
@@ -227,9 +262,27 @@ def api_client(settings: Settings):
 
     try:
         app = create_app(settings)
-        with TestClient(app) as client:
+        with TestClient(app, base_url=CLIENT_BASE_URL) as client:
             yield client
     finally:
         # The app owns its pool and closes it in the lifespan; only the schema is
         # left behind, and the `db` fixture is not in play here to drop it.
         asyncio.run(_drop_schema(settings.database_url, settings.db_schema))
+
+
+@pytest.fixture
+def second_client(settings: Settings):
+    """A second TestClient with its own cookie jar, sharing one database.
+
+    Two real sessions rather than two hand-built repositories: the scoping has
+    to hold through the dependency wiring, not just in a constructor. It takes
+    the same `settings` as `api_client`, so both share a schema -- different
+    settings would give each its own database and the isolation tests would
+    prove nothing.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app(settings), base_url=CLIENT_BASE_URL) as client:
+        yield client

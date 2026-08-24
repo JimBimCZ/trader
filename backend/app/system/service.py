@@ -6,8 +6,11 @@ import logging
 
 from ..clock import now_ts
 from ..config import Settings
-from ..db import Database, seed_if_empty
+from ..db import Database, seed_user
+from ..llm.repository import ChatRepository
 from ..market import MarketDataSource, PriceCache
+from ..portfolio.repository import PositionRepository, SnapshotRepository, TradeRepository
+from ..watchlist.repository import WatchlistRepository
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +46,17 @@ async def health_status(
 
 
 class ResetService:
-    """Restores the seeded starting state.
+    """Restores one user's seeded starting state.
 
     Exists because a demo that auto-executes trades needs a way back to
-    $10,000 without deleting the database file.
+    $10,000 without deleting the database.
     """
 
     def __init__(
         self,
         db: Database,
         settings: Settings,
-        users,
-        positions,
-        trades,
-        snapshots,
-        watchlist_repo,
-        chat_repo,
+        user_id: str,
         reconciler,
         history_store,
         trade_lock,
@@ -66,43 +64,49 @@ class ResetService:
     ) -> None:
         self._db = db
         self._settings = settings
-        self._users = users
-        self._positions = positions
-        self._trades = trades
-        self._snapshots = snapshots
-        self._watchlist = watchlist_repo
-        self._chat = chat_repo
+        self._user_id = user_id
+        self._positions = PositionRepository(db, user_id)
+        self._trades = TradeRepository(db, user_id)
+        self._snapshots = SnapshotRepository(db, user_id)
+        self._watchlist = WatchlistRepository(db, user_id)
+        self._chat = ChatRepository(db, user_id)
         self._reconciler = reconciler
         self._history = history_store
         self._trade_lock = trade_lock
         self._watchlist_lock = watchlist_lock
 
     async def reset(self) -> None:
-        """Wipe user state, re-seed, and resync the tracked-ticker set."""
+        """Wipe this user's state, re-seed them, and reconcile globally."""
         async with self._trade_lock, self._watchlist_lock:
-            # Delete and re-seed in ONE transaction. Split across two, the
-            # profile row is committed-absent for a round trip, and every
-            # per-user table now has a foreign key pointing at it -- so a
-            # concurrent write landing in that window raises
-            # ForeignKeyViolationError and surfaces as a 500. ChatService in
-            # particular inserts its user message under neither lock held
-            # here, so nothing else serializes it against this. Before the
-            # foreign keys existed the same race silently wrote an orphan row.
-            # seed_if_empty opens a transaction of its own; that nests into
-            # this one as a no-op rather than starting a second.
+            # Delete and re-seed in ONE transaction: the profile row must
+            # never be committed-absent, because every per-user table has a
+            # foreign key pointing at it and a concurrent insert landing in
+            # that window would fail with a ForeignKeyViolationError.
+            # ChatService in particular inserts its user message under
+            # neither lock held here, so nothing else serializes it.
             async with self._db.transaction():
                 await self._positions.delete_all()
                 await self._trades.delete_all()
                 await self._snapshots.delete_all()
                 await self._chat.delete_all()
                 await self._watchlist.delete_all()
-                await self._db.execute("DELETE FROM users_profile WHERE id = 'default'")
-                await seed_if_empty(self._db, self._settings)
-                await self._snapshots.insert(self._settings.initial_cash)
+                # Updated, not deleted and recreated: deleting the profile
+                # cascades the user out of existence and invalidates their
+                # cookie, so a reset would silently log them out.
+                await self._db.execute(
+                    "UPDATE users_profile SET cash_balance = ? WHERE id = ?",
+                    (self._settings.initial_cash, self._user_id),
+                )
+                # seed_user writes the t=0 snapshot, so the chart is not
+                # empty between here and the writer's next tick.
+                await seed_user(self._db, self._settings, self._user_id)
 
-            # Outside the transaction: these touch the market source and the
-            # in-memory history store, not the database.
+            # Global, not per-user: the tickers this user released may still
+            # be watched or held by someone else, and reconcile() is the only
+            # thing that checks. It touches the market source and the
+            # in-memory history store, not the database, so it stays outside
+            # the transaction.
             await self._reconciler.reconcile()
             self._history.clear()
 
-        logger.info("Reset to seeded state")
+        logger.info("Reset %s to seeded state", self._user_id)
