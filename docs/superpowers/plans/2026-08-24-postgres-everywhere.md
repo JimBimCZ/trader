@@ -401,6 +401,19 @@ class TestIdempotency:
             await db.execute(statement)
 
 
+class TestSeedingSurvivesMigration:
+    async def test_a_fresh_database_still_gets_its_watchlist(self, db, settings):
+        """Regression: a migration that creates the profile row makes seed_if_empty
+        return early, leaving a fresh install with cash and no tickers."""
+        from app.db.seed import seed_if_empty
+
+        await seed_if_empty(db, settings)
+        await run_migrations(db)
+
+        row = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
+        assert row["n"] == 10
+
+
 class TestForeignKeys:
     @pytest.mark.parametrize("table", PER_USER_TABLES)
     async def test_user_id_references_the_profile(self, db, table):
@@ -422,8 +435,8 @@ class TestForeignKeys:
         """This cascade is what makes guest expiry a single DELETE."""
         from app.db.seed import seed_if_empty
 
-        await run_migrations(db)
         await seed_if_empty(db, settings)
+        await run_migrations(db)
         before = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert before["n"] == 10
 
@@ -494,9 +507,6 @@ MIGRATIONS: list[str] = [
         f"UPDATE {table} SET user_id = 'default' WHERE user_id IS NULL"
         for table in ("watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages")
     ),
-    "INSERT INTO users_profile (id, cash_balance, created_at) "
-    "VALUES ('default', 10000.0, '1970-01-01T00:00:00+00:00') "
-    "ON CONFLICT (id) DO NOTHING",
     *(
         _add_user_fk(table)
         for table in ("watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages")
@@ -511,10 +521,11 @@ async def run_migrations(db: Database) -> None:
     logger.info("Migrations applied: %d statements", len(MIGRATIONS))
 ```
 
-Note on the `INSERT`: the foreign keys cannot be added while a row points at a profile that does
-not exist. On a fresh database seeding has not run yet, so the placeholder profile is created
-first and `seed_if_empty` then finds it and skips — which is why its `cash_balance` is the same
-`10000.0` the seed would have written.
+Note on ordering: the foreign keys cannot be added while a row points at a profile that does not
+exist, so seeding must happen *before* the migrations rather than after. Step 5 wires that order.
+An earlier draft of this plan created a placeholder profile inside migration 001 instead — which
+would have made `seed_if_empty` find the row, return early, and leave a fresh database with a
+cash balance and **no watchlist at all**.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -534,8 +545,10 @@ In `backend/app/main.py`, inside `lifespan`, between `init_db` and `seed_if_empt
 ```python
     db = await open_database(settings)
     await init_db(db)
-    await run_migrations(db)
+    # Seeding first: migration 001 adds foreign keys to users_profile, and every
+    # per-user row must already point at a profile that exists.
     await seed_if_empty(db, settings)
+    await run_migrations(db)
 ```
 
 Add `run_migrations` to the existing `from .db import ...` line.
