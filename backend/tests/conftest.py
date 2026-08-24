@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import os
+import uuid
 
+import asyncpg
 import pytest
 import pytest_asyncio
 
 from app.config import Settings
-from app.db import Database, SqliteDatabase, init_db, open_connection, seed_if_empty
+from app.db import Database, init_db, seed_if_empty
+from app.db.postgres import PostgresDatabase, normalize_dsn
 from app.market import PriceCache
+
+TEST_DSN = os.environ.get("TEST_DATABASE_URL", "postgresql://trader:trader@localhost:5432/trader")
 
 
 @pytest.fixture
@@ -20,19 +25,34 @@ def event_loop_policy():
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    """Settings pointed at a throwaway database, with the LLM mocked."""
-    return Settings(db_path=tmp_path / "test.db", llm_mock=True, sim_seed=1234)
+def db_schema() -> str:
+    """A unique schema name per test, so tests never share tables."""
+    return f"test_{uuid.uuid4().hex[:12]}"
+
+
+@pytest.fixture
+def settings(db_schema: str) -> Settings:
+    """Settings pointed at a throwaway schema, with the LLM mocked."""
+    return Settings(
+        database_url=TEST_DSN,
+        db_schema=db_schema,
+        llm_mock=True,
+        sim_seed=1234,
+    )
 
 
 @pytest_asyncio.fixture
 async def db(settings: Settings):
-    """An initialized, unseeded database on a temp path."""
-    conn = await open_connection(settings.db_path)
-    database = SqliteDatabase(conn)
+    """An initialized, unseeded database isolated in its own schema."""
+    database = await PostgresDatabase.connect(settings.database_url, search_path=settings.db_schema)
     await init_db(database)
     yield database
-    await conn.close()
+    await database.close()
+    admin = await asyncpg.connect(normalize_dsn(settings.database_url))
+    try:
+        await admin.execute(f'DROP SCHEMA IF EXISTS "{settings.db_schema}" CASCADE')
+    finally:
+        await admin.close()
 
 
 @pytest_asyncio.fixture
@@ -70,7 +90,7 @@ async def services(seeded_db, settings: Settings, price_cache: PriceCache):
 
 @pytest.fixture
 def api_client(settings: Settings):
-    """A TestClient over a fully started app on a temp database.
+    """A TestClient over a fully started app in its own schema.
 
     Entering the context manager runs the real lifespan, so the simulator,
     history collector, and snapshot writer are all live.
@@ -79,5 +99,18 @@ def api_client(settings: Settings):
 
     from app.main import create_app
 
-    with TestClient(create_app(settings)) as client:
+    app = create_app(settings)
+    with TestClient(app) as client:
         yield client
+    # The app owns its pool and closes it in the lifespan; only the schema is
+    # left behind, and the `db` fixture is not in play here to drop it.
+    import asyncio
+
+    async def _drop() -> None:
+        admin = await asyncpg.connect(normalize_dsn(settings.database_url))
+        try:
+            await admin.execute(f'DROP SCHEMA IF EXISTS "{settings.db_schema}" CASCADE')
+        finally:
+            await admin.close()
+
+    asyncio.run(_drop())

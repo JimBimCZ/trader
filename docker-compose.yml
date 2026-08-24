@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trader-db
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader
+      POSTGRES_DB: trader
+    ports:
+      # Localhost only, like the app: this database has no meaningful password.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - trader-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trader"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   trader:
     build:
       context: .
@@ -16,3 +34,6 @@ services:
       # and deletable from the host.
       - ./db:/app/db
     restart: unless-stopped
+
+volumes:
+  trader-pgdata:

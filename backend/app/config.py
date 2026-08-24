@@ -56,7 +56,7 @@ def _default_db_path() -> str:
 class Settings:
     """Immutable snapshot of configuration, read once at startup."""
 
-    db_path: Path
+    db_path: Path = Path("db/trader.db")
     massive_api_key: str = ""
     openrouter_api_key: str = ""
     llm_mock: bool = False
@@ -64,6 +64,10 @@ class Settings:
     #: Postgres connection string. When set it replaces SQLite entirely — the
     #: serverless deployment has no disk to keep a database file on.
     database_url: str = ""
+
+    #: Postgres schema to confine every table to. Empty means `public`. The
+    #: test suite sets it per test; production has no reason to.
+    db_schema: str = ""
 
     #: "simulator" (stateful GBM on a background task), "deterministic" (the
     #: same process as a pure function of the clock), or "" to decide from the
@@ -131,6 +135,7 @@ class Settings:
             sim_vol_multiplier=_env_float("SIM_VOL_MULTIPLIER", 1.0),
             massive_poll_seconds=_env_float("MASSIVE_POLL_SECONDS", 15.0),
             database_url=os.environ.get("DATABASE_URL", "").strip(),
+            db_schema=os.environ.get("DB_SCHEMA", "").strip(),
             # A serverless deployment has no background task to tick a
             # stateful simulator, so it defaults to the computed one.
             market_source=os.environ.get(

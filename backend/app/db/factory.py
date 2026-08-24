@@ -22,7 +22,7 @@ async def open_database(settings: Settings) -> Database:
         from .postgres import PostgresDatabase
 
         logger.info("Database: Postgres")
-        return await PostgresDatabase.connect(settings.database_url)
+        return await PostgresDatabase.connect(settings.database_url, search_path=settings.db_schema)
 
     logger.info("Database: SQLite at %s", settings.db_path)
     return SqliteDatabase(await open_connection(settings.db_path))

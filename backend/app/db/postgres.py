@@ -18,7 +18,7 @@ from typing import Any
 import asyncpg
 
 from .connection import Database
-from .schema import POSTGRES_SCHEMA_SQL
+from .schema import POSTGRES_SCHEMA_SQL as SCHEMA_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -73,17 +73,22 @@ class PostgresDatabase(Database):
     #: Postgres has no implicit row ordering, so the schema adds one.
     sequence_column = "seq"
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, search_path: str = "") -> None:
         self._pool = pool
+        self._search_path = search_path
 
     @classmethod
-    async def connect(cls, dsn: str, max_size: int = 4) -> PostgresDatabase:
+    async def connect(cls, dsn: str, max_size: int = 4, search_path: str = "") -> PostgresDatabase:
         """Open a pool against Neon's pooled endpoint.
 
         `statement_cache_size=0` is not optional: the pooled endpoint runs
         pgbouncer in transaction mode, where a prepared statement made on one
         server-side connection is not there on the next, and asyncpg's cache
         would hand out stale statement names.
+
+        `search_path` confines every table to one schema. Production leaves it
+        empty and uses `public`; the test suite gives each test its own schema,
+        which is what makes them isolated and safe to run in parallel.
         """
         pool = await asyncpg.create_pool(
             normalize_dsn(dsn),
@@ -91,9 +96,10 @@ class PostgresDatabase(Database):
             max_size=max_size,
             statement_cache_size=0,
             command_timeout=15.0,
+            server_settings={"search_path": search_path} if search_path else None,
         )
         logger.info("Postgres pool ready")
-        return cls(pool)
+        return cls(pool, search_path)
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[asyncpg.Connection]:
@@ -145,7 +151,11 @@ class PostgresDatabase(Database):
 
     async def initialize_schema(self) -> None:
         async with self._pool.acquire() as conn:
-            await conn.execute(POSTGRES_SCHEMA_SQL)
+            if self._search_path:
+                # The pool's search_path names it, but naming a schema does not
+                # create it, and CREATE TABLE will not create it either.
+                await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self._search_path}"')
+            await conn.execute(SCHEMA_SQL)
         logger.info("Postgres schema ready")
 
     async def close(self) -> None:

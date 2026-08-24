@@ -19,10 +19,13 @@ class TestSnapshotWriter:
             await writer.stop()
 
     async def test_writes_again_on_each_interval(self, services):
+        # Postgres round-trips over the loopback socket where SQLite wrote
+        # in-process, so the window needs more margin above `interval` than
+        # it did against the file-backed database.
         writer = SnapshotWriter(services.trade_service, interval=0.02)
         await writer.start()
         try:
-            await asyncio.sleep(0.07)
+            await asyncio.sleep(0.09)
         finally:
             await writer.stop()
         assert len(await services.trade_service.get_history()) >= 3

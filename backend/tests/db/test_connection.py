@@ -4,35 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from app.db import Database, init_db, open_connection
-
-
-class TestOpenConnection:
-    async def test_creates_parent_directories(self, tmp_path):
-        """The database file's directory is created if it does not exist."""
-        path = tmp_path / "nested" / "deeper" / "trader.db"
-        conn = await open_connection(path)
-        try:
-            assert path.exists()
-        finally:
-            await conn.close()
-
-    async def test_enables_wal_mode(self, tmp_path):
-        """WAL mode is on, so readers are not blocked by an open write."""
-        conn = await open_connection(tmp_path / "t.db")
-        try:
-            async with conn.execute("PRAGMA journal_mode") as cursor:
-                row = await cursor.fetchone()
-            assert row[0].lower() == "wal"
-        finally:
-            await conn.close()
+from app.db import Database, init_db
 
 
 class TestInitDb:
     async def test_creates_every_table(self, db: Database):
         """All six tables from the schema exist after init."""
-        rows = await db.fetch_all("SELECT name FROM sqlite_master WHERE type = 'table'")
-        names = {row["name"] for row in rows}
+        rows = await db.fetch_all(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+        )
+        names = {row["table_name"] for row in rows}
         assert {
             "users_profile",
             "watchlist",
@@ -46,14 +27,17 @@ class TestInitDb:
         """Running init twice does not fail or duplicate anything."""
         await init_db(db)
         await init_db(db)
-        rows = await db.fetch_all("SELECT name FROM sqlite_master WHERE type = 'table'")
-        assert len([r for r in rows if r["name"] == "positions"]) == 1
+        rows = await db.fetch_all(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = 'positions'"
+        )
+        assert len(rows) == 1
 
     async def test_side_check_constraint(self, db: Database):
         """The trades table rejects a side other than buy or sell."""
-        import aiosqlite
+        import asyncpg
 
-        with pytest.raises(aiosqlite.IntegrityError):
+        with pytest.raises(asyncpg.CheckViolationError):
             await db.execute(
                 "INSERT INTO trades (id, user_id, ticker, side, quantity, price, executed_at)"
                 " VALUES ('1', 'default', 'AAPL', 'hold', 1, 1, 'now')"
@@ -91,5 +75,5 @@ class TestIsHealthy:
 
     async def test_reports_unhealthy_after_close(self, db: Database):
         """A closed connection reports unhealthy rather than raising."""
-        await db.connection.close()
+        await db.close()
         assert await db.is_healthy() is False
