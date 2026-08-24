@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from ..deps import CurrentUserDep, TradeServiceDep
@@ -23,11 +23,16 @@ class TradeRequest(BaseModel):
 
 
 @router.get("")
-async def get_portfolio(service: TradeServiceDep, user: CurrentUserDep) -> dict:
+async def get_portfolio(request: Request, service: TradeServiceDep, user: CurrentUserDep) -> dict:
     """Current cash, positions priced live, and totals."""
     # `user` is resolved for its side effects here -- minting a guest and
     # setting the session cookie. Task 6 scopes the service to it.
     del user
+    if request.app.state.settings.serverless:
+        # No background task runs between requests on a serverless
+        # deployment, so the periodic snapshot moves onto the read that is
+        # naturally scoped to a user who is actually looking at the app.
+        await service.write_snapshot_if_stale()
     view = await service.get_portfolio()
     return view.to_dict()
 

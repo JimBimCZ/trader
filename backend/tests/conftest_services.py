@@ -89,6 +89,7 @@ class Services:
             self.trades,
             self.snapshots,
             price_cache,
+            settings,
             self.reconciler,
             self.trade_lock,
         )

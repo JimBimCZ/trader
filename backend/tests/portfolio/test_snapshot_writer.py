@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
 
+from app.identity.store import UserStore
+from app.portfolio.service import TradeService
 from app.portfolio.snapshot_writer import SnapshotWriter
+
+
+def _writer(services, **kwargs) -> SnapshotWriter:
+    """A SnapshotWriter wired against the `services` fixture's temp database.
+
+    `services.trade_service` is scoped to the default user, which is seeded
+    with a fresh `last_seen_at`, so it falls inside `write_for_active_users`'
+    one-hour window and these tests can keep asserting through it.
+    """
+    store = UserStore(services.db, services.settings)
+    return SnapshotWriter(services.db, services.settings, store, services.price_cache, **kwargs)
 
 
 class TestSnapshotWriter:
     async def test_writes_immediately_on_start(self, services):
         """A point at t=0 means the P&L chart is never empty on first load."""
-        writer = SnapshotWriter(services.trade_service, interval=60)
+        writer = _writer(services, interval=60)
         await writer.start()
         try:
             assert len(await services.trade_service.get_history()) == 1
@@ -22,7 +34,7 @@ class TestSnapshotWriter:
         # Postgres round-trips over the loopback socket where SQLite wrote
         # in-process, so the window needs more margin above `interval` than
         # it did against the file-backed database.
-        writer = SnapshotWriter(services.trade_service, interval=0.02)
+        writer = _writer(services, interval=0.02)
         await writer.start()
         try:
             await asyncio.sleep(0.09)
@@ -31,24 +43,29 @@ class TestSnapshotWriter:
         assert len(await services.trade_service.get_history()) >= 3
 
     async def test_stop_is_idempotent(self, services):
-        writer = SnapshotWriter(services.trade_service, interval=0.01)
+        writer = _writer(services, interval=0.01)
         await writer.start()
         await writer.stop()
         await writer.stop()
 
-    async def test_a_failing_write_does_not_kill_the_loop(self, services):
-        """One unvaluable moment must not stop snapshots forever."""
-        writer = SnapshotWriter(services.trade_service, interval=0.02)
-        calls = {"n": 0}
-        real = services.trade_service.write_snapshot
+    async def test_a_failing_write_does_not_kill_the_loop(self, services, monkeypatch):
+        """One unvaluable moment must not stop snapshots forever.
 
-        async def flaky():
+        The writer builds its own per-user `TradeService` on every tick (see
+        `build_trade_service`), so there is no single service instance to
+        monkeypatch any more -- the flaky behaviour is installed on the class.
+        """
+        writer = _writer(services, interval=0.02)
+        calls = {"n": 0}
+        real = TradeService.write_snapshot
+
+        async def flaky(self):
             calls["n"] += 1
             if calls["n"] == 2:
                 raise RuntimeError("transient")
-            return await real()
+            return await real(self)
 
-        services.trade_service.write_snapshot = AsyncMock(side_effect=flaky)
+        monkeypatch.setattr(TradeService, "write_snapshot", flaky)
         await writer.start()
         try:
             await asyncio.sleep(0.09)
@@ -88,3 +105,72 @@ class TestPruning:
         await services.snapshots.insert(10_000.0)
         await services.db.commit()
         assert await services.trade_service.prune_snapshots(retention_days=7) == 0
+
+
+class TestCoversActiveUsers:
+    async def test_a_snapshot_is_written_for_every_recently_seen_user(
+        self, seeded_db, settings, priced_cache
+    ):
+        from app.identity.store import UserStore
+        from app.portfolio.snapshot_writer import SnapshotWriter
+
+        store = UserStore(seeded_db, settings)
+        first = await store.mint_guest()
+        second = await store.mint_guest()
+        writer = SnapshotWriter(seeded_db, settings, store, priced_cache)
+
+        await writer.write_for_active_users()
+
+        for user in (first, second):
+            rows = await seeded_db.fetch_all(
+                "SELECT total_value FROM portfolio_snapshots WHERE user_id = ?",
+                (user.id,),
+            )
+            assert len(rows) == 1
+
+    async def test_an_idle_user_gets_no_snapshot(self, seeded_db, settings, priced_cache):
+        """Writing for every user forever turns a dormant demo into a growing
+        write load with nobody reading the result."""
+        from app.identity.store import UserStore
+        from app.portfolio.snapshot_writer import SnapshotWriter
+
+        store = UserStore(seeded_db, settings)
+        idle = await store.mint_guest()
+        await seeded_db.execute(
+            "UPDATE users_profile SET last_seen_at = ? WHERE id = ?",
+            ("2020-01-01T00:00:00+00:00", idle.id),
+        )
+        writer = SnapshotWriter(seeded_db, settings, store, priced_cache)
+
+        await writer.write_for_active_users()
+
+        rows = await seeded_db.fetch_all(
+            "SELECT total_value FROM portfolio_snapshots WHERE user_id = ?", (idle.id,)
+        )
+        assert rows == []
+
+    async def test_one_user_failing_does_not_stop_the_others(
+        self, seeded_db, settings, priced_cache
+    ):
+        """A single unpriceable position must not cost every other user their
+        snapshot for that interval."""
+        from app.identity.store import UserStore
+        from app.portfolio.snapshot_writer import SnapshotWriter
+
+        store = UserStore(seeded_db, settings)
+        broken = await store.mint_guest()
+        healthy = await store.mint_guest()
+        await seeded_db.execute(
+            "INSERT INTO positions (id, user_id, ticker, quantity, avg_cost, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("p-broken", broken.id, "NOPRICE", 1.0, 10.0, "2026-01-01T00:00:00Z"),
+        )
+        writer = SnapshotWriter(seeded_db, settings, store, priced_cache)
+
+        await writer.write_for_active_users()
+
+        rows = await seeded_db.fetch_all(
+            "SELECT total_value FROM portfolio_snapshots WHERE user_id = ?",
+            (healthy.id,),
+        )
+        assert len(rows) == 1

@@ -7,6 +7,7 @@ import logging
 import math
 from datetime import UTC, datetime, timedelta
 
+from ..config import Settings
 from ..db import Database
 from ..errors import (
     InsufficientCashError,
@@ -51,7 +52,8 @@ class TradeService:
         trades: TradeRepository,
         snapshots: SnapshotRepository,
         price_cache: PriceCache,
-        reconciler: TickerReconciler,
+        settings: Settings,
+        reconciler: TickerReconciler | None,
         lock: asyncio.Lock,
     ) -> None:
         self._db = db
@@ -60,6 +62,7 @@ class TradeService:
         self._trades = trades
         self._snapshots = snapshots
         self._prices = price_cache
+        self._settings = settings
         self._reconciler = reconciler
         self._lock = lock
 
@@ -207,3 +210,56 @@ class TradeService:
         async with self._lock:
             async with self._db.transaction():
                 return await self._snapshots.prune_older_than(cutoff)
+
+    async def write_snapshot_if_stale(self) -> bool:
+        """Write a snapshot when the newest is older than the interval.
+
+        The serverless path: nothing runs between requests, so this replaces
+        the SSE heartbeat, which no longer has a user to attribute a snapshot
+        to. Naturally scoped to users who are actually looking at the app.
+        """
+        newest = await self._snapshots.newest_recorded_at()
+        if newest is not None:
+            age = _seconds_since(newest)
+            if age < self._settings.snapshot_interval_seconds:
+                return False
+        await self.write_snapshot()
+        return True
+
+
+def _seconds_since(iso_timestamp: str) -> float:
+    """Elapsed seconds since `iso_timestamp`, treating an unparseable value as
+    'long ago' so a malformed row forces a snapshot rather than raising on a
+    request path. Mirrors `_seconds_between` in `app/identity/store.py`.
+    """
+    try:
+        earlier = datetime.fromisoformat(iso_timestamp)
+    except (TypeError, ValueError):
+        return float("inf")
+    return (datetime.now(UTC) - earlier).total_seconds()
+
+
+def build_trade_service(
+    db: Database,
+    settings: Settings,
+    price_cache: PriceCache,
+    user_id: str,
+    reconciler: TickerReconciler | None = None,
+    lock: asyncio.Lock | None = None,
+) -> TradeService:
+    """Construct a TradeService for one user.
+
+    The single place repositories are wired to a user id, so there is one
+    place to get it wrong rather than three.
+    """
+    return TradeService(
+        db,
+        UserRepository(db, user_id),
+        PositionRepository(db, user_id),
+        TradeRepository(db, user_id),
+        SnapshotRepository(db, user_id),
+        price_cache,
+        settings,
+        reconciler,
+        lock or asyncio.Lock(),
+    )

@@ -182,6 +182,14 @@ class SnapshotRepository:
         )
         return int(row["n"]) if row else 0
 
+    async def newest_recorded_at(self) -> str | None:
+        row = await self._db.fetch_one(
+            "SELECT recorded_at FROM portfolio_snapshots WHERE user_id = ? "
+            "ORDER BY recorded_at DESC, seq DESC LIMIT 1",
+            (self._user_id,),
+        )
+        return row["recorded_at"] if row is not None else None
+
     async def prune_older_than(self, cutoff_iso: str) -> int:
         """Delete snapshots older than the cutoff. Returns rows removed."""
         before = await self.count()

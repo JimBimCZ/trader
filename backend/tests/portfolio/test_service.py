@@ -229,3 +229,51 @@ class TestConcurrency:
         successes = [r for r in results if not isinstance(r, Exception)]
         assert len(successes) == 1
         assert await services.positions.get("AAPL") is None
+
+
+class TestWriteSnapshotIfStale:
+    """The serverless path: this replaces the SSE heartbeat on the read that
+    is naturally scoped to a user actually looking at the app."""
+
+    async def test_writes_when_there_is_no_snapshot_yet(self, services):
+        assert await services.snapshots.newest_recorded_at() is None
+        assert await services.trade_service.write_snapshot_if_stale() is True
+        assert await services.snapshots.newest_recorded_at() is not None
+
+    async def test_skips_when_the_newest_snapshot_is_recent(self, services):
+        await services.trade_service.write_snapshot()
+        before = await services.trade_service.get_history()
+
+        assert await services.trade_service.write_snapshot_if_stale() is False
+
+        assert await services.trade_service.get_history() == before
+
+    async def test_writes_when_the_newest_snapshot_is_older_than_the_interval(self, services):
+        await services.trade_service.write_snapshot()
+        await services.db.execute(
+            "UPDATE portfolio_snapshots SET recorded_at = '2020-01-01T00:00:00Z'"
+        )
+
+        assert await services.trade_service.write_snapshot_if_stale() is True
+
+        assert len(await services.trade_service.get_history()) == 2
+
+
+class TestBuildTradeService:
+    async def test_builds_a_service_scoped_to_the_given_user(
+        self, seeded_db, settings, price_cache
+    ):
+        from app.identity.store import UserStore
+        from app.portfolio.service import build_trade_service
+
+        store = UserStore(seeded_db, settings)
+        user = await store.mint_guest()
+        service = build_trade_service(seeded_db, settings, price_cache, user.id)
+
+        assert await service.get_history() == []
+        await service.write_snapshot()
+        assert len(await service.get_history()) == 1
+
+        # Nothing leaks onto the default user's own snapshot history.
+        default_service = build_trade_service(seeded_db, settings, price_cache, "default")
+        assert await default_service.get_history() == []

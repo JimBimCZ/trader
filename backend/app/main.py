@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         watchlist_lock = asyncio.Lock()
 
         trade_service = TradeService(
-            db, users, positions, trades, snapshots, price_cache, reconciler, trade_lock
+            db, users, positions, trades, snapshots, price_cache, settings, reconciler, trade_lock
         )
         watchlist_service = WatchlistService(
             db, watchlist_repo, reconciler, watchlist_lock, settings.watchlist_cap
@@ -177,18 +177,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             watchlist_lock,
         )
 
-        # Nothing runs between requests on a serverless platform, so the periodic
-        # snapshot moves into the SSE stream — which is open exactly when someone
-        # is watching the chart it feeds.
-        snapshot_writer: SnapshotWriter | None = None
-        if settings.serverless:
-            await trade_service.write_snapshot()
-        else:
-            snapshot_writer = SnapshotWriter(
-                trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
-            )
-            await snapshot_writer.start()
-            stack.push_async_callback(snapshot_writer.stop)
+        snapshot_writer = SnapshotWriter(
+            db,
+            settings,
+            app.state.user_store,
+            price_cache,
+            settings.snapshot_interval_seconds,
+            settings.snapshot_retention_days,
+        )
+        await snapshot_writer.start()
+        stack.push_async_callback(snapshot_writer.stop)
 
         app.state.db = db
         app.state.source = source
@@ -226,19 +224,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(chat_module.router)
     app.include_router(system_module.router)
 
-    async def write_snapshot_from_stream() -> None:
-        """Late-bound: the trade service does not exist until startup runs."""
-        service = getattr(app.state, "trade_service", None)
-        if service is not None:
-            await service.write_snapshot()
-
     app.include_router(
-        create_stream_router(
-            app.state.price_cache,
-            max_seconds=resolved.stream_max_seconds,
-            on_heartbeat=write_snapshot_from_stream if resolved.serverless else None,
-            heartbeat_seconds=resolved.snapshot_interval_seconds,
-        )
+        create_stream_router(app.state.price_cache, max_seconds=resolved.stream_max_seconds)
     )
 
     _register_static_routes(app)
