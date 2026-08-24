@@ -73,10 +73,10 @@ real data for synthetic data is worse than a still screen.
 ## Architecture
 
 ```
-Docker container (port 8000)                    Postgres 16
-├── FastAPI                                      (compose service locally,
-│   ├── /api/*          REST                      Neon when deployed)
-│   ├── /api/stream/*   Server-Sent Events    ◄──┘
+Docker container (port 8000)                 ──►  Postgres 16
+├── FastAPI                                       (compose service locally,
+│   ├── /api/*          REST                       Neon when deployed)
+│   ├── /api/stream/*   Server-Sent Events
 │   └── /*              the exported frontend
 └── Background tasks: market data, history collection, portfolio snapshots
 ```

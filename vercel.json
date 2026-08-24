@@ -7,7 +7,7 @@
     "api/index.py": {
       "maxDuration": 60,
       "memory": 1024,
-      "excludeFiles": "{frontend/**,test/**,db/**,docs/**,planning/**,scripts/**,backend/tests/**,backend/.venv/**,backend/uv.lock,**/__pycache__/**,**/*.pyc}"
+      "excludeFiles": "{frontend/**,test/**,docs/**,planning/**,scripts/**,backend/tests/**,backend/.venv/**,backend/uv.lock,**/__pycache__/**,**/*.pyc}"
     }
   },
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }],
