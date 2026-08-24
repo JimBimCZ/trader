@@ -126,6 +126,19 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
    `OPENROUTER_API_KEY` in the dashboard, and drop `LLM_MOCK` from `vercel.json`. It adds ~130 MB to
    the bundle and a real cost per message, on an app that has no authentication.
 
+### Access and cost
+
+The production domain is public: Vercel Authentication cannot cover it on the Hobby plan, which
+refuses `ssoProtection` for production outright. Preview deployments and production *deployment*
+URLs are gated by it; the production domain is not, and password protection is paid too. The app
+has no authentication of its own, so anyone with the URL can trade the imaginary money.
+
+The cost that matters is the price stream. An open tab holds an SSE connection, and streaming is
+billed for its whole duration — `STREAM_MAX_SECONDS` closes it at 55 s but `EventSource`
+reconnects, so an idle tab bills continuously. A usage limit on the account is what bounds that:
+Hobby pauses the project rather than charging. The alternative is pausing the project between
+demos.
+
 ### What this deployment does not carry
 
 `MASSIVE_API_KEY` is ignored — the Massive client is not installed, so real market data stays a
