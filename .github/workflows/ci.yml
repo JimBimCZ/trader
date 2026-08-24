@@ -102,12 +102,38 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Start Postgres
+        run: |
+          # The app now requires DATABASE_URL and refuses to start without
+          # it, so this job needs a real Postgres reachable from the trader
+          # container. A `services:` container (as the backend job uses)
+          # is published on the *runner's* localhost network namespace;
+          # trader-ci below is a plain `docker run` container on Docker's
+          # bridge network, where localhost means itself, not the runner.
+          # So instead: a user-defined network, Postgres on it under a
+          # known name, and the app addresses that name directly.
+          docker network create trader-ci-net
+          docker run -d --name trader-ci-db --network trader-ci-net \
+            -e POSTGRES_USER=trader -e POSTGRES_PASSWORD=trader -e POSTGRES_DB=trader \
+            postgres:16-alpine
+
+          for _ in $(seq 1 30); do
+            if docker exec trader-ci-db pg_isready -U trader -d trader >/dev/null 2>&1; then
+              echo "Postgres is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres never became ready. Logs:" >&2
+          docker logs trader-ci-db >&2
+          exit 1
+
       - name: Start the container
         run: |
-          mkdir -p db
-          docker run -d --name trader-ci -p 8000:8000 \
+          docker run -d --name trader-ci --network trader-ci-net -p 8000:8000 \
             -e LLM_MOCK=true -e SIM_SEED=1234 \
-            -v "$PWD/db:/app/db" trader:ci
+            -e DATABASE_URL="postgresql://trader:trader@trader-ci-db:5432/trader" \
+            trader:ci
 
       - name: Wait for health
         run: |
@@ -133,7 +159,11 @@ jobs:
 
       - name: Container logs on failure
         if: failure()
-        run: docker logs trader-ci
+        run: |
+          echo "== trader-ci logs ==" >&2
+          docker logs trader-ci >&2 || true
+          echo "== trader-ci-db logs ==" >&2
+          docker logs trader-ci-db >&2 || true
 
   e2e:
     name: E2E (Playwright)
