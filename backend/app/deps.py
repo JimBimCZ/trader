@@ -50,14 +50,32 @@ async def get_current_user(request: Request, response: Response) -> User:
     return user
 
 
+def _request_is_https(request: Request) -> bool:
+    """Whether the *browser* reached us over https.
+
+    `X-Forwarded-Proto` first, because Vercel and every other TLS-terminating
+    proxy speaks plain http to the app behind it -- `request.url.scheme` is
+    `http` there even though the browser is on https. A proxy chain sends a
+    comma-separated list, oldest first, and the first entry is the one the
+    browser actually used.
+    """
+    forwarded = request.headers.get("x-forwarded-proto")
+    scheme = forwarded.split(",")[0].strip() if forwarded else request.url.scheme
+    return scheme.lower() == "https"
+
+
 def _set_session_cookie(
     request: Request, response: Response, cookie: SessionCookie, user_id: str
 ) -> None:
     """Attach the session cookie.
 
-    `Secure` is set everywhere except localhost: a Secure cookie is dropped
-    by the browser over plain http, which would make local development mint a
-    new guest on every single request.
+    `Secure` follows the scheme, not the hostname. Keying it off the hostname
+    ("everything except localhost is secure") looks plausible and is wrong: a
+    browser refuses to store or return a Secure cookie over plain http, so a
+    Docker deployment reached on a LAN address -- http://192.168.1.5:8000 --
+    would drop the cookie on every response and mint a fresh guest on every
+    single request. Unbounded rows, a portfolio that resets constantly, and
+    nothing raising.
     """
     response.set_cookie(
         key=COOKIE_NAME,
@@ -65,7 +83,7 @@ def _set_session_cookie(
         max_age=COOKIE_MAX_AGE,
         httponly=True,
         samesite="Lax",
-        secure=request.url.hostname not in ("localhost", "127.0.0.1"),
+        secure=_request_is_https(request),
         path="/",
     )
 
@@ -139,7 +157,6 @@ def get_reset_service(request: Request, user: CurrentUserDep) -> ResetService:
         state.settings,
         user.id,
         state.reconciler,
-        state.history_store,
         state.trade_lock,
         state.watchlist_lock,
     )

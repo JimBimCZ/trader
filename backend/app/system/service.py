@@ -58,7 +58,6 @@ class ResetService:
         settings: Settings,
         user_id: str,
         reconciler,
-        history_store,
         trade_lock,
         watchlist_lock,
     ) -> None:
@@ -71,7 +70,6 @@ class ResetService:
         self._watchlist = WatchlistRepository(db, user_id)
         self._chat = ChatRepository(db, user_id)
         self._reconciler = reconciler
-        self._history = history_store
         self._trade_lock = trade_lock
         self._watchlist_lock = watchlist_lock
 
@@ -103,10 +101,14 @@ class ResetService:
 
             # Global, not per-user: the tickers this user released may still
             # be watched or held by someone else, and reconcile() is the only
-            # thing that checks. It touches the market source and the
-            # in-memory history store, not the database, so it stays outside
-            # the transaction.
+            # thing that checks. It touches the market source rather than the
+            # database, so it stays outside the transaction.
+            #
+            # The price history ring buffer is deliberately left alone. It
+            # holds market data per ticker -- shared by everyone, owned by
+            # nobody -- so clearing it here blanked every other user's main
+            # chart. This user's own chart comes from portfolio_snapshots,
+            # which the transaction above already cleared.
             await self._reconciler.reconcile()
-            self._history.clear()
 
         logger.info("Reset %s to seeded state", self._user_id)

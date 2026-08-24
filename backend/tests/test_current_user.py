@@ -49,3 +49,49 @@ class TestExemptRoutes:
 
     def test_health_still_works_with_no_users_at_all(self, api_client):
         assert api_client.get("/api/health").json()["status"] == "ok"
+
+
+class TestSecureFlagFollowsTheScheme:
+    """`Secure` keyed off the hostname was the bug this replaces.
+
+    A browser refuses to store or return a Secure cookie over plain http, so
+    "secure everywhere except localhost" meant a Docker deployment reached on
+    a LAN address dropped the cookie on every response and minted a fresh
+    guest on every single request -- unbounded rows, a portfolio that reset
+    constantly, and nothing raising.
+    """
+
+    def test_a_plain_http_request_gets_no_secure_flag(self, api_client):
+        """A LAN address, not localhost -- localhost was exempt either way,
+        so asserting on it would pass against the bug this replaces."""
+        response = api_client.get("http://192.168.1.5/api/portfolio")
+
+        assert "Secure" not in response.headers["set-cookie"]
+
+    def test_an_https_request_gets_the_secure_flag(self, api_client):
+        response = api_client.get("https://localhost/api/portfolio")
+
+        assert "Secure" in response.headers["set-cookie"]
+
+    def test_a_proxy_forwarding_https_gets_the_secure_flag(self, api_client):
+        """Vercel terminates TLS upstream, so the app itself sees plain http."""
+        response = api_client.get(
+            "http://localhost/api/portfolio", headers={"X-Forwarded-Proto": "https"}
+        )
+
+        assert "Secure" in response.headers["set-cookie"]
+
+    def test_the_first_hop_of_a_proxy_chain_wins(self, api_client):
+        """A chain lists schemes oldest-first; the browser's is the first."""
+        response = api_client.get(
+            "http://localhost/api/portfolio", headers={"X-Forwarded-Proto": "https, http"}
+        )
+
+        assert "Secure" in response.headers["set-cookie"]
+
+    def test_a_proxy_forwarding_plain_http_gets_no_secure_flag(self, api_client):
+        response = api_client.get(
+            "http://localhost/api/portfolio", headers={"X-Forwarded-Proto": "http"}
+        )
+
+        assert "Secure" not in response.headers["set-cookie"]

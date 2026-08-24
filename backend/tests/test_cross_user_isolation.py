@@ -65,3 +65,19 @@ class TestResetIsolation:
         survivor = second_client.get("/api/portfolio").json()
         assert len(survivor["positions"]) == 1
         assert survivor["positions"][0]["ticker"] == "AAPL"
+
+    def test_a_reset_does_not_blank_the_shared_price_history(self, api_client):
+        """The ring buffer holds market data per ticker, shared by everyone.
+
+        Clearing it on reset blanked the main chart for every other user, who
+        had asked for nothing. Asserted on a ticker the market source does not
+        track, because the collector refills a real one within a poll interval
+        -- which would make this pass whether the bug was there or not.
+        """
+        store = api_client.app.state.history_store
+        store.track("ZZZZ")
+        store.append("ZZZZ", 1.0, 100.0)
+
+        api_client.post("/api/reset")
+
+        assert store.get("ZZZZ") == [(1.0, 100.0)]
