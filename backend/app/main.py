@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         price_cache: PriceCache = app.state.price_cache
         source = create_market_data_source(price_cache, settings)
-        reconciler = TickerReconciler(source, watchlist_repo, positions)
+        reconciler = TickerReconciler(source, db, settings.market_capacity)
 
         tracked = await reconciler.compute_tracked_tickers()
         await source.start(tracked)

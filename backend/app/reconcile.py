@@ -1,64 +1,88 @@
 """Keeps the market data source's tracked tickers in sync with the database.
 
 The rule (DECISIONS D-01): the price source tracks
-`union(watchlist tickers, tickers with a non-zero position)`.
+`union(watchlist tickers, tickers with a non-zero position)` -- across every
+user, not just whoever happens to be making the request.
 
 This module is the only place allowed to call `source.remove_ticker()`,
-because that call also evicts the cached price. Removing a ticker the user
-still holds would make its price `None`, and portfolio valuation would then
-fail — or worse, silently value the position at zero.
+because that call also evicts the cached price. Removing a ticker that any
+user still holds would make its price `None`, and that user's portfolio
+valuation would then fail -- or worse, silently value the position at zero.
 """
 
 from __future__ import annotations
 
 import logging
 
+from .db import Database
+from .errors import MarketCapacityFullError
 from .market import MarketDataSource
-from .portfolio.repository import PositionRepository
-from .watchlist.repository import WatchlistRepository
+from .portfolio.models import EPSILON
 
 logger = logging.getLogger(__name__)
 
 
 class TickerReconciler:
-    """Owns the tracked-ticker set."""
+    """Owns the tracked-ticker set, globally.
 
-    def __init__(
-        self,
-        source: MarketDataSource,
-        watchlist_repo: WatchlistRepository,
-        position_repo: PositionRepository,
-    ) -> None:
+    Both sides are global by necessity. The tracked set feeds one shared price
+    cache, so "should we track this?" and "may we stop?" are questions about
+    every user at once, not about whoever happens to be making the request.
+    """
+
+    def __init__(self, source: MarketDataSource, db: Database, capacity: int) -> None:
         self._source = source
-        self._watchlist = watchlist_repo
-        self._positions = position_repo
+        self._db = db
+        self._capacity = capacity
 
     async def compute_tracked_tickers(self) -> list[str]:
-        """The union of watched tickers and tickers with an open position."""
-        watched = await self._watchlist.list()
-        held = await self._positions.list_open_tickers()
-        return sorted(set(watched) | set(held))
+        """Every watched ticker and every held ticker, across all users.
+
+        Expired guests are deleted rows, so they drop out of this query on
+        their own -- no liveness filter is needed.
+        """
+        rows = await self._db.fetch_all(
+            "SELECT DISTINCT ticker FROM watchlist "
+            "UNION "
+            "SELECT DISTINCT ticker FROM positions WHERE quantity > ?",
+            (EPSILON,),
+        )
+        return sorted(row["ticker"] for row in rows)
 
     async def ensure_tracked(self, ticker: str) -> None:
-        """Start tracking a ticker if it is not already tracked. Idempotent."""
-        if ticker not in self._source.get_tickers():
-            await self._source.add_ticker(ticker)
-            logger.info("Now tracking %s", ticker)
+        """Start tracking a ticker if it is not already. Idempotent."""
+        if ticker in self._source.get_tickers():
+            return
+        if len(self._source.get_tickers()) >= self._capacity:
+            raise MarketCapacityFullError(
+                f"The market data feed is tracking its maximum of {self._capacity} "
+                f"tickers. Remove one from a watchlist before adding another."
+            )
+        await self._source.add_ticker(ticker)
+        logger.info("Now tracking %s", ticker)
 
     async def release_if_unheld(self, ticker: str) -> None:
-        """Stop tracking a ticker, but only if no position remains open.
+        """Stop tracking only when no user watches or holds the ticker.
 
-        This is the single enforcement point for DECISIONS D-03.
+        Removing a ticker also evicts its cached price, so releasing one that
+        another user still holds makes their valuation fail -- or worse,
+        silently value the position at zero.
         """
-        position = await self._positions.get(ticker)
-        if position is not None and position.quantity > 0:
-            logger.info("Keeping %s tracked: position still open", ticker)
+        row = await self._db.fetch_one(
+            "SELECT 1 AS present FROM watchlist WHERE ticker = ? "
+            "UNION ALL "
+            "SELECT 1 AS present FROM positions WHERE ticker = ? AND quantity > ? "
+            "LIMIT 1",
+            (ticker, ticker, EPSILON),
+        )
+        if row is not None:
+            logger.info("Keeping %s tracked: another user watches or holds it", ticker)
             return
         await self._source.remove_ticker(ticker)
         logger.info("Stopped tracking %s", ticker)
 
     async def reconcile(self) -> list[str]:
-        """Force the source's tracked set to match the union exactly.
+        """Force the source's tracked set to match the global union exactly.
 
         Used at startup and after a reset, where the source may be tracking
         anything at all.

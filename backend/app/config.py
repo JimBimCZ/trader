@@ -73,6 +73,9 @@ class Settings:
 
     # Domain limits
     watchlist_cap: int = 25
+
+    #: Bounds simulator work and Massive polling cost across all users.
+    market_capacity: int = 100
     initial_cash: float = 10_000.0
 
     #: Signs the session cookie that identifies a user. See `from_env` for

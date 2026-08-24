@@ -77,7 +77,7 @@ class Services:
         self.chat_repo = ChatRepository(db)
 
         self.source = StubDataSource(price_cache)
-        self.reconciler = TickerReconciler(self.source, self.watchlist_repo, self.positions)
+        self.reconciler = TickerReconciler(self.source, db, settings.market_capacity)
 
         self.trade_lock = asyncio.Lock()
         self.watchlist_lock = asyncio.Lock()

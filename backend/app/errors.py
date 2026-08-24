@@ -46,6 +46,18 @@ class WatchlistFullError(AppError):
     status_code, code = 400, "WATCHLIST_FULL"
 
 
+class MarketCapacityFullError(AppError):
+    """The global tracked-ticker set is full.
+
+    Deliberately distinct from WATCHLIST_FULL: this is a limit on what the
+    whole deployment polls, not on the caller's own list. Reporting it as
+    WATCHLIST_FULL would tell a user their watchlist is full when it holds
+    three tickers.
+    """
+
+    status_code, code = 503, "MARKET_CAPACITY_FULL"
+
+
 class TickerNotFoundError(AppError):
     status_code, code = 404, "TICKER_NOT_FOUND"
 
