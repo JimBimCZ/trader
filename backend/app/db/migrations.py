@@ -23,15 +23,19 @@ def _add_user_fk(table: str) -> str:
     """Attach `table.user_id` to `users_profile.id`, cascading on delete.
 
     Postgres has no ADD CONSTRAINT IF NOT EXISTS, so the DO block checks
-    pg_constraint first. The constraint name is derived from the table so each
-    one is distinct and the check is exact.
+    pg_constraint first. Constraint names are unique per relation, not per
+    database, so the check must be scoped to the target table via
+    `conrelid = '{table}'::regclass` — matching by name alone would find a
+    same-named constraint in any other schema and skip the ALTER TABLE,
+    silently leaving this table with no foreign key at all.
     """
     name = f"fk_{table}_user"
     return f"""
     DO $$
     BEGIN
         IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE conname = '{name}'
+            SELECT 1 FROM pg_constraint
+            WHERE conname = '{name}' AND conrelid = '{table}'::regclass
         ) THEN
             ALTER TABLE {table}
                 ADD CONSTRAINT {name}

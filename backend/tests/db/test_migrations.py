@@ -7,9 +7,14 @@ statement here is idempotent, so the list needs no version table.
 
 from __future__ import annotations
 
+import uuid
+
+import asyncpg
 import pytest
 
+from app.db import init_db
 from app.db.migrations import MIGRATIONS, run_migrations
+from app.db.postgres import PostgresDatabase, normalize_dsn
 
 PER_USER_TABLES = ["watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages"]
 
@@ -71,3 +76,40 @@ class TestForeignKeys:
 
         after = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert after["n"] == 0
+
+
+class TestForeignKeyGuardIsSchemaScoped:
+    async def test_second_schema_also_gets_the_foreign_key(self, db, settings):
+        """Regression: pg_constraint.conname is unique per relation, not per database.
+
+        An existence check that matched on name alone would find `fk_watchlist_user`
+        already used by the `db` fixture's schema and skip ADD CONSTRAINT in a second
+        schema entirely, leaving its watchlist table with no foreign key at all.
+        """
+        await run_migrations(db)  # the first schema gets its constraint first
+
+        other_schema = f"test_{uuid.uuid4().hex[:12]}"
+        other = await PostgresDatabase.connect(settings.database_url, search_path=other_schema)
+        try:
+            await init_db(other)
+            await run_migrations(other)
+
+            row = await other.fetch_one(
+                """
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE t.relname = 'watchlist'
+                  AND c.conname = 'fk_watchlist_user'
+                  AND n.nspname = current_schema()
+                """
+            )
+            assert row is not None, "second schema's watchlist is missing its foreign key"
+        finally:
+            await other.close()
+            admin = await asyncpg.connect(normalize_dsn(settings.database_url))
+            try:
+                await admin.execute(f'DROP SCHEMA IF EXISTS "{other_schema}" CASCADE')
+            finally:
+                await admin.close()
