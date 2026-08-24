@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 
 from app.config import Settings
-from app.db import Database, init_db, seed_if_empty
+from app.db import Database, init_db, run_migrations, seed_if_empty
 from app.db.postgres import PostgresDatabase, normalize_dsn
 from app.market import PriceCache
 
@@ -175,8 +175,16 @@ async def db(settings: Settings):
 
 @pytest_asyncio.fixture
 async def seeded_db(db: Database, settings: Settings):
-    """An initialized database with the default profile and watchlist."""
+    """An initialized, seeded, migrated database -- production's exact shape.
+
+    Migrations run after seeding, matching main.py's lifespan order: migration
+    001 adds foreign keys to users_profile, so every per-user row must already
+    point at a profile that exists. The bare `db` fixture deliberately stays
+    unmigrated; it models "schema only" for the db-layer tests that assert on
+    what initialize_schema alone produces.
+    """
     await seed_if_empty(db, settings)
+    await run_migrations(db)
     return db
 
 
