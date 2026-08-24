@@ -6,13 +6,26 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
-from litellm import completion
 from pydantic import ValidationError
 
 from ..errors import LLMError
 from .models import ChatCompletionSchema
 
 logger = logging.getLogger(__name__)
+
+
+def completion(*args, **kwargs):
+    """Deferred proxy to `litellm.completion`.
+
+    litellm and its dependency tree are ~130 MB. Importing it at module scope
+    would force every deployment to carry that weight to import this module,
+    including one running the mock client with no API key at all — so the
+    import happens on the first live call instead.
+    """
+    from litellm import completion as _completion
+
+    return _completion(*args, **kwargs)
+
 
 MODEL = "openrouter/openai/gpt-oss-120b"
 EXTRA_BODY = {"provider": {"order": ["cerebras"]}}

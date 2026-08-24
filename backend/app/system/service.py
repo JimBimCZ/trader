@@ -39,6 +39,9 @@ async def health_status(
         "seconds_since_last_tick": seconds_since_last_tick,
         "tracked_tickers": len(source.get_tickers()),
         "db_ok": db_ok,
+        # Which store is live, so a serverless deployment can be told apart
+        # from one that silently fell back to an ephemeral file in /tmp.
+        "db_backend": "postgres" if settings.database_url else "sqlite",
     }
 
 

@@ -17,8 +17,9 @@ class WatchlistRepository:
 
     async def list(self) -> list[str]:
         """Watched tickers, oldest first. The frontend renders in this order."""
+        seq = self._db.sequence_column
         rows = await self._db.fetch_all(
-            "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY added_at, rowid",
+            f"SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY added_at, {seq}",
             (self._user_id,),
         )
         return [row["ticker"] for row in rows]

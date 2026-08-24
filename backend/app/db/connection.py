@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,53 @@ async def open_connection(path: Path) -> aiosqlite.Connection:
     return conn
 
 
-class Database:
+class Database(ABC):
+    """What the repositories need from a database, whichever one is behind it.
+
+    Two implementations exist: SQLite for the container deployment, Postgres for
+    the serverless one, where there is no disk to keep a file on. The interface
+    is narrow on purpose — the repositories write plain SQL with `?`
+    placeholders, and the Postgres implementation rewrites those rather than
+    making every query dialect-aware.
+    """
+
+    #: Column that breaks ties between rows sharing a timestamp. SQLite has an
+    #: implicit rowid; Postgres has to be given one.
+    sequence_column: str = "rowid"
+
+    @abstractmethod
+    async def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None: ...
+
+    @abstractmethod
+    async def fetch_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None: ...
+
+    @abstractmethod
+    async def fetch_all(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]: ...
+
+    @abstractmethod
+    async def commit(self) -> None: ...
+
+    @abstractmethod
+    def transaction(self) -> AbstractAsyncContextManager[Database]:
+        """Run a block atomically. Rolls back on any exception."""
+
+    @abstractmethod
+    async def initialize_schema(self) -> None:
+        """Create the schema if absent. Idempotent."""
+
+    @abstractmethod
+    async def close(self) -> None: ...
+
+    async def is_healthy(self) -> bool:
+        try:
+            await self.fetch_one("SELECT 1")
+        except Exception:
+            logger.exception("Database health check failed")
+            return False
+        return True
+
+
+class SqliteDatabase(Database):
     """Thin wrapper over one shared aiosqlite connection.
 
     One connection for the whole process: SQLite has a single writer and
@@ -80,17 +127,15 @@ class Database:
         else:
             await self._conn.commit()
 
-    async def is_healthy(self) -> bool:
-        try:
-            await self.fetch_one("SELECT 1")
-        except Exception:
-            logger.exception("Database health check failed")
-            return False
-        return True
+    async def initialize_schema(self) -> None:
+        await self._conn.executescript(SCHEMA_SQL)
+        await self.commit()
+        logger.info("SQLite schema ready")
+
+    async def close(self) -> None:
+        await self._conn.close()
 
 
 async def init_db(db: Database) -> None:
     """Create the schema if absent. Idempotent, safe on every startup."""
-    await db.connection.executescript(SCHEMA_SQL)
-    await db.commit()
-    logger.info("Database schema ready")
+    await db.initialize_schema()

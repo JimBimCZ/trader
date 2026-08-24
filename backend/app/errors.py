@@ -111,3 +111,14 @@ class FrontendNotBuiltError(AppError):
     """
 
     status_code, code = 503, "FRONTEND_NOT_BUILT"
+
+
+class RouteNotFoundError(AppError):
+    """An /api path that no router claims.
+
+    The SPA fallback matches every path, so without this an unknown API URL
+    would be answered with the app shell — or, where the frontend is served by
+    a CDN rather than by this process, with FRONTEND_NOT_BUILT.
+    """
+
+    status_code, code = 404, "ROUTE_NOT_FOUND"

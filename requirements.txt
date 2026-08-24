@@ -1,0 +1,13 @@
+# Dependencies for the Vercel function (api/index.py). Deliberately not the
+# backend's full dependency set: the serverless deployment computes prices
+# instead of simulating them (no numpy), talks to Postgres instead of SQLite
+# (no aiosqlite in production, kept for the /tmp fallback), never calls Massive,
+# and ships with LLM_MOCK=true.
+#
+# Adding the real assistant means adding `litellm` here and setting
+# OPENROUTER_API_KEY; it pulls in ~130 MB, so it is not carried by default.
+fastapi>=0.115.0
+pydantic>=2.9.0
+python-dotenv>=1.0.0
+asyncpg>=0.30.0
+aiosqlite>=0.20.0

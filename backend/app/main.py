@@ -19,14 +19,14 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import Settings
-from .db import Database, init_db, open_connection, seed_if_empty
-from .errors import FrontendNotBuiltError, register_exception_handlers
+from .db import init_db, open_database, seed_if_empty
+from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
 from .llm import ActionExecutor, ChatRepository, ChatService, create_chat_client
 from .llm import router as chat_module
-from .market import PriceCache, create_market_data_source, create_stream_router
-from .market.simulator import SimulatorDataSource
+from .market import PriceCache, create_market_data_source, create_price_cache, create_stream_router
+from .market.deterministic_source import DeterministicPriceCache
 from .portfolio import router as portfolio_module
 from .portfolio.repository import (
     PositionRepository,
@@ -64,8 +64,14 @@ def _build_market_source(settings: Settings, price_cache: PriceCache):
 
     create_market_data_source exposes no configuration, so the simulator's
     seed and tick rate are applied here rather than by editing the factory.
+    The deterministic source takes the same knobs through its cache, which was
+    already built with them.
     """
-    source = create_market_data_source(price_cache)
+    source = create_market_data_source(price_cache, settings)
+    # Imported here rather than at module scope: the simulator pulls in numpy,
+    # which the serverless deployment does not install.
+    from .market.simulator import SimulatorDataSource
+
     if isinstance(source, SimulatorDataSource):
         return SimulatorDataSource(
             price_cache=price_cache,
@@ -74,6 +80,15 @@ def _build_market_source(settings: Settings, price_cache: PriceCache):
             vol_multiplier=settings.sim_vol_multiplier,
         )
     return source
+
+
+def _build_history_store(settings: Settings, price_cache: PriceCache) -> HistoryStore:
+    """The ring buffer, or the computed history that makes it unnecessary."""
+    if isinstance(price_cache, DeterministicPriceCache):
+        from .history.deterministic import DeterministicHistoryStore
+
+        return DeterministicHistoryStore(price_cache, maxlen=settings.history_maxlen)
+    return HistoryStore(maxlen=settings.history_maxlen)
 
 
 @asynccontextmanager
@@ -86,8 +101,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings: Settings = app.state.settings
 
-    conn = await open_connection(settings.db_path)
-    db = Database(conn)
+    db = await open_database(settings)
     await init_db(db)
     await seed_if_empty(db, settings)
 
@@ -105,11 +119,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tracked = await reconciler.compute_tracked_tickers()
     await source.start(tracked)
 
-    history_store = HistoryStore(maxlen=settings.history_maxlen)
+    history_store = _build_history_store(settings, price_cache)
     for ticker in tracked:
         history_store.track(ticker)
-    collector = HistoryCollector(price_cache, history_store, settings.history_poll_seconds)
-    await collector.start()
+    # Computed history has nothing to collect, and a serverless instance is
+    # frozen between requests so the task would not run anyway.
+    collector: HistoryCollector | None = None
+    if not settings.serverless and not isinstance(price_cache, DeterministicPriceCache):
+        collector = HistoryCollector(price_cache, history_store, settings.history_poll_seconds)
+        await collector.start()
 
     trade_lock = asyncio.Lock()
     watchlist_lock = asyncio.Lock()
@@ -143,10 +161,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         watchlist_lock,
     )
 
-    snapshot_writer = SnapshotWriter(
-        trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
-    )
-    await snapshot_writer.start()
+    # Nothing runs between requests on a serverless platform, so the periodic
+    # snapshot moves into the SSE stream — which is open exactly when someone
+    # is watching the chart it feeds.
+    snapshot_writer: SnapshotWriter | None = None
+    if settings.serverless:
+        await trade_service.write_snapshot()
+    else:
+        snapshot_writer = SnapshotWriter(
+            trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
+        )
+        await snapshot_writer.start()
 
     app.state.db = db
     app.state.source = source
@@ -160,10 +185,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await snapshot_writer.stop()
-        await collector.stop()
+        if snapshot_writer is not None:
+            await snapshot_writer.stop()
+        if collector is not None:
+            await collector.stop()
         await source.stop()
-        await conn.close()
+        await db.close()
         logger.info("Shutdown complete")
 
 
@@ -174,10 +201,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app = FastAPI(title="Trader", version="0.1.0", lifespan=lifespan)
-    app.state.settings = settings or Settings.from_env()
-    # The cache is plain in-memory state with no I/O, so it can be created
-    # here and shared with the SSE router; startup only fills it.
-    app.state.price_cache = PriceCache()
+    resolved = settings or Settings.from_env()
+    app.state.settings = resolved
+    # The cache has no I/O, so it can be created here and shared with the SSE
+    # router; startup only fills it — or, for the computed cache, only names
+    # the tickers it should answer for.
+    app.state.price_cache = create_price_cache(resolved)
 
     register_exception_handlers(app)
 
@@ -188,7 +217,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(history_module.router)
     app.include_router(chat_module.router)
     app.include_router(system_module.router)
-    app.include_router(create_stream_router(app.state.price_cache))
+
+    async def write_snapshot_from_stream() -> None:
+        """Late-bound: the trade service does not exist until startup runs."""
+        service = getattr(app.state, "trade_service", None)
+        if service is not None:
+            await service.write_snapshot()
+
+    app.include_router(
+        create_stream_router(
+            app.state.price_cache,
+            max_seconds=resolved.stream_max_seconds,
+            on_heartbeat=write_snapshot_from_stream if resolved.serverless else None,
+            heartbeat_seconds=resolved.snapshot_interval_seconds,
+        )
+    )
 
     _register_static_routes(app)
     return app
@@ -199,6 +242,13 @@ def _register_static_routes(app: FastAPI) -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str) -> FileResponse:
+        # An unmatched /api path is a wrong URL, not a request for the app
+        # shell. Falling through would answer it with index.html, or — where
+        # the frontend is served by a CDN rather than from here, as on
+        # Vercel — with "frontend has not been built".
+        if full_path == "api" or full_path.startswith("api/"):
+            raise RouteNotFoundError(f"No API route matches /{full_path}.")
+
         candidate = (STATIC_DIR / full_path).resolve()
         static_root = STATIC_DIR.resolve()
         # Only serve files inside the static root, never a traversal target.

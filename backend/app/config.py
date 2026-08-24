@@ -39,6 +39,19 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _default_db_path() -> str:
+    """Where SQLite lives when no DATABASE_URL is configured.
+
+    On a serverless platform the only writable directory is /tmp, and it
+    belongs to one instance and survives only until that instance is recycled.
+    That makes it a usable fallback for a demo and a bad place for anything to
+    live permanently — which is what DATABASE_URL is for.
+    """
+    if os.environ.get("VERCEL"):
+        return "/tmp/trader.db"
+    return "db/trader.db"
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Immutable snapshot of configuration, read once at startup."""
@@ -47,6 +60,16 @@ class Settings:
     massive_api_key: str = ""
     openrouter_api_key: str = ""
     llm_mock: bool = False
+
+    #: Postgres connection string. When set it replaces SQLite entirely — the
+    #: serverless deployment has no disk to keep a database file on.
+    database_url: str = ""
+
+    #: "simulator" (stateful GBM on a background task), "deterministic" (the
+    #: same process as a pure function of the clock), or "" to decide from the
+    #: environment. Nothing runs between requests on a serverless platform, so
+    #: the background task never ticks there.
+    market_source: str = ""
 
     # Market data
     sim_seed: int | None = None
@@ -66,6 +89,11 @@ class Settings:
     snapshot_interval_seconds: float = 30.0
     snapshot_retention_days: int = 7
 
+    #: Seconds after which the SSE stream closes itself so the client
+    #: reconnects. 0 means never — the container deployment holds the
+    #: connection open indefinitely.
+    stream_max_seconds: float = 0.0
+
     # Chat
     chat_history_limit: int = 20
     chat_history_char_budget: int = 8000
@@ -77,12 +105,24 @@ class Settings:
 
     @property
     def market_source_name(self) -> str:
-        return "massive" if self.massive_api_key.strip() else "simulator"
+        if self.massive_api_key.strip():
+            return "massive"
+        return self.market_source or "simulator"
+
+    @property
+    def serverless(self) -> bool:
+        """Whether the process is one Vercel will freeze between requests.
+
+        Decides two things that have no other signal: that background tasks are
+        pointless, and that the SSE stream has to close itself before the
+        platform cuts it off.
+        """
+        return bool(os.environ.get("VERCEL"))
 
     @classmethod
     def from_env(cls, db_path: Path | None = None) -> Settings:
         return cls(
-            db_path=db_path or Path(os.environ.get("DB_PATH", "db/trader.db")),
+            db_path=db_path or Path(os.environ.get("DB_PATH", _default_db_path())),
             massive_api_key=os.environ.get("MASSIVE_API_KEY", ""),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
             llm_mock=_env_bool("LLM_MOCK"),
@@ -90,4 +130,11 @@ class Settings:
             sim_tick_ms=_env_int("SIM_TICK_MS", 500) or 500,
             sim_vol_multiplier=_env_float("SIM_VOL_MULTIPLIER", 1.0),
             massive_poll_seconds=_env_float("MASSIVE_POLL_SECONDS", 15.0),
+            database_url=os.environ.get("DATABASE_URL", "").strip(),
+            # A serverless deployment has no background task to tick a
+            # stateful simulator, so it defaults to the computed one.
+            market_source=os.environ.get(
+                "MARKET_SOURCE", "deterministic" if os.environ.get("VERCEL") else ""
+            ).strip(),
+            stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
         )
