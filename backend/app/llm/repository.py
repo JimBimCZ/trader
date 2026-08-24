@@ -49,11 +49,12 @@ class ChatRepository:
 
     async def list_recent(self, limit: int = 50) -> list[ChatMessage]:
         """The newest `limit` messages, returned oldest-first for display."""
+        seq = self._db.sequence_column
         rows = await self._db.fetch_all(
-            """
+            f"""
             SELECT id, role, content, actions, created_at
             FROM chat_messages WHERE user_id = ?
-            ORDER BY created_at DESC, rowid DESC
+            ORDER BY created_at DESC, {seq} DESC
             LIMIT ?
             """,
             (self._user_id, limit),

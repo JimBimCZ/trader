@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -23,12 +23,23 @@ _KEEPALIVE_FRAME = ": keepalive\n\n"
 _KEEPALIVE_INTERVAL = 15.0
 
 
-def create_stream_router(price_cache: PriceCache) -> APIRouter:
+def create_stream_router(
+    price_cache: PriceCache,
+    max_seconds: float = 0.0,
+    on_heartbeat: Callable[[], Awaitable[object]] | None = None,
+    heartbeat_seconds: float = 30.0,
+) -> APIRouter:
     """Build the SSE router bound to this cache.
 
     Constructed per call rather than at module scope: a shared module-level
     router would accumulate duplicate routes and the first closure's cache
     would win, breaking any fixture that builds more than one app.
+
+    `max_seconds` closes the stream from this side before a platform with a
+    function time limit cuts it off mid-frame; EventSource then reconnects on
+    the `retry` directive below. `on_heartbeat` runs periodically for as long as
+    the stream is open — it is where the portfolio snapshot gets written when
+    there is no background task to write it.
     """
     router = APIRouter(prefix="/api/stream", tags=["streaming"])
 
@@ -39,7 +50,13 @@ def create_stream_router(price_cache: PriceCache) -> APIRouter:
         data: {"AAPL": {"ticker": "AAPL", "price": 190.50, ...}, ...}
         """
         return StreamingResponse(
-            _generate_events(price_cache, request),
+            _generate_events(
+                price_cache,
+                request,
+                max_seconds=max_seconds,
+                on_heartbeat=on_heartbeat,
+                heartbeat_seconds=heartbeat_seconds,
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -55,13 +72,18 @@ async def _generate_events(
     price_cache: PriceCache,
     request: Request,
     interval: float = 0.5,
+    max_seconds: float = 0.0,
+    on_heartbeat: Callable[[], Awaitable[object]] | None = None,
+    heartbeat_seconds: float = 30.0,
 ) -> AsyncGenerator[str, None]:
-    """Yields SSE frames until the client disconnects."""
+    """Yields SSE frames until the client disconnects or the budget runs out."""
     # Tell the client to retry after 1 second if the connection drops.
     yield "retry: 1000\n\n"
 
+    started = time.monotonic()
     last_version = -1
-    last_emit = time.monotonic()
+    last_emit = started
+    last_heartbeat = started
     client_ip = request.client.host if request.client else "unknown"
     logger.info("SSE client connected: %s", client_ip)
 
@@ -69,6 +91,10 @@ async def _generate_events(
         while True:
             if await request.is_disconnected():
                 logger.info("SSE client disconnected: %s", client_ip)
+                break
+
+            if max_seconds and time.monotonic() - started >= max_seconds:
+                logger.info("SSE stream reached its %.0fs budget; closing", max_seconds)
                 break
 
             current_version = price_cache.version
@@ -89,6 +115,14 @@ async def _generate_events(
             elif now - last_emit >= _KEEPALIVE_INTERVAL:
                 yield _KEEPALIVE_FRAME
                 last_emit = now
+
+            if on_heartbeat is not None and now - last_heartbeat >= heartbeat_seconds:
+                last_heartbeat = now
+                try:
+                    await on_heartbeat()
+                except Exception:
+                    # A failed snapshot must not take the price stream down.
+                    logger.exception("SSE heartbeat failed")
 
             await asyncio.sleep(interval)
     except asyncio.CancelledError:

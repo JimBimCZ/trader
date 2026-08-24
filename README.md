@@ -111,11 +111,24 @@ npx playwright test
 To run the frontend against the backend during development, build it once (`npm run build`) and
 point the backend at it with `STATIC_DIR=../frontend/out`.
 
+## Deploying to Vercel
+
+Docker is the reference deployment. The app also runs on Vercel, where a long-lived process is not
+available: prices there are computed from the clock rather than ticked by a background task, and the
+database is Neon Postgres rather than a SQLite file. Both live behind the same interfaces, so the
+routes, services and frontend are identical on either target.
+
+The repository root carries `vercel.json`, `requirements.txt` and `api/index.py`; pushing to `main`
+deploys. One manual step remains after the first deploy — set `DATABASE_URL` to a Neon **pooled**
+connection string, or state lives in `/tmp` and resets when the instance recycles.
+`planning/VERCEL_DEPLOYMENT.md` has the detail.
+
 ## Documentation
 
 | Document | What it is |
 |---|---|
 | `planning/API_CONTRACT.md` | The wire format. Frozen: every endpoint, the SSE payload, the error envelope. |
+| `planning/VERCEL_DEPLOYMENT.md` | The serverless target: what changed, why, and how to finish the setup. |
 | `planning/DECISIONS.md` | Resolved design decisions, and why. Authoritative over `PLAN.md`. |
 | `planning/PLAN.md` | The original product brief. |
 | `planning/REVIEW.md` | A review pass that audited the plan against the shipped code. |

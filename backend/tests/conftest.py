@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from app.config import Settings
-from app.db import Database, init_db, open_connection, seed_if_empty
+from app.db import Database, SqliteDatabase, init_db, open_connection, seed_if_empty
 from app.market import PriceCache
 
 
@@ -29,7 +29,7 @@ def settings(tmp_path: Path) -> Settings:
 async def db(settings: Settings):
     """An initialized, unseeded database on a temp path."""
     conn = await open_connection(settings.db_path)
-    database = Database(conn)
+    database = SqliteDatabase(conn)
     await init_db(database)
     yield database
     await conn.close()

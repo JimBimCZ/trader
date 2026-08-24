@@ -4,12 +4,13 @@ Public API:
     PriceUpdate         - Immutable price snapshot dataclass
     PriceCache          - Thread-safe in-memory price store
     MarketDataSource    - Abstract interface for data providers
-    create_market_data_source - Factory that selects simulator or Massive
+    create_price_cache  - Factory that selects the stored or computed cache
+    create_market_data_source - Factory that selects simulator, Massive or computed
     create_stream_router - FastAPI router factory for SSE endpoint
 """
 
 from .cache import PriceCache
-from .factory import create_market_data_source
+from .factory import create_market_data_source, create_price_cache
 from .interface import MarketDataSource
 from .models import PriceUpdate
 from .stream import create_stream_router
@@ -19,5 +20,6 @@ __all__ = [
     "PriceCache",
     "MarketDataSource",
     "create_market_data_source",
+    "create_price_cache",
     "create_stream_router",
 ]
