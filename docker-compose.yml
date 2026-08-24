@@ -29,10 +29,13 @@ services:
       - "127.0.0.1:8000:8000"
     env_file:
       - .env
-    volumes:
-      # A bind mount rather than a named volume, so the database is visible
-      # and deletable from the host.
-      - ./db:/app/db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Wins over env_file, so a DATABASE_URL in .env pointing at Neon does
+      # not take effect here: `docker compose up` always uses this container.
+      DATABASE_URL: postgresql://trader:trader@postgres:5432/trader
     restart: unless-stopped
 
 volumes:
