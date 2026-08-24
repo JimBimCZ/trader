@@ -206,7 +206,9 @@ needs to reference. See §7 and §11.*
 - **`backend/app/db/`** contains the Postgres schema, connection handling, seed logic, and the
   forward-only migration runner. Startup is eager, in the FastAPI lifespan, not lazy on first
   request: `init_db` creates the schema if it is missing, `seed_if_empty` seeds default data, then
-  `run_migrations` applies any migration not yet recorded as run.
+  `run_migrations` re-runs every migration statement, in order, on every startup — there is no
+  version table recording which have already run; every statement is written to be safe to run
+  again, so idempotency does the job bookkeeping would otherwise do.
 - **`planning/`** contains project-wide documentation, including this plan. All agents reference files here as the shared contract.
 - **`test/`** contains Playwright E2E tests and supporting infrastructure (e.g., `docker-compose.test.yml`). Unit tests live within `frontend/` and `backend/` respectively, following each framework's conventions.
 - **`scripts/`** contains start/stop scripts that wrap Docker commands.
@@ -295,10 +297,12 @@ dated note under §3.*
 The backend connects to Postgres in the FastAPI lifespan, before the market source starts —
 eagerly, not lazily on first request, because `MarketDataSource.start(tickers)` needs the ticker
 list at startup. Startup order is `init_db` (create the schema if missing) → `seed_if_empty` (seed
-default data into an empty database) → `run_migrations` (apply any migration not yet recorded as
-run). This means:
+default data into an empty database) → `run_migrations` (re-run every migration statement, in
+order, on every startup). This means:
 
-- A forward-only, idempotent migration runner, not a separate manual migration step
+- A forward-only, idempotent migration runner, not a separate manual migration step — there is no
+  version table recording which migrations have run; every statement is written to be safe to
+  execute again, and idempotency replaces that bookkeeping
 - No manual database setup — a fresh Postgres (the compose service, or a fresh Neon branch) starts
   clean, seeded, and migrated automatically
 - `DATABASE_URL` must point at a reachable Postgres before the app will start at all
@@ -588,15 +592,19 @@ bind-mounts. See the dated note under §3.*
 `postgres` (`postgres:16-alpine`). The app's `DATABASE_URL` is pinned in the compose file's
 `environment:` block, which deliberately overrides anything in `.env` — `docker compose up`
 always talks to this local database, never to a Neon connection string left over in `.env`.
-Postgres's data persists in a named Docker volume:
+Postgres's data persists in a named Docker volume, declared in `docker-compose.yml`:
 
 ```bash
 docker compose up -d --build
 ```
 
 ```yaml
+services:
+  postgres:
+    volumes:
+      - trader-pgdata:/var/lib/postgresql/data
 volumes:
-  trader-pgdata:/var/lib/postgresql/data
+  trader-pgdata:
 ```
 
 There is no `db/` directory in the project root any more — nothing in the repo bind-mounts a

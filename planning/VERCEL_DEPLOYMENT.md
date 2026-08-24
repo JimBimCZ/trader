@@ -67,13 +67,16 @@ raises `ConfigurationError` at startup if `DATABASE_URL` is absent. Nothing belo
 any more; it is just how the app talks to its one database.*
 
 - `PostgresDatabase` translates `?` placeholders to `$n`, so **every repository's SQL stays
-  written the same way** it always has been. `REAL` maps to `DOUBLE PRECISION` and a `seq
-  BIGSERIAL` column is always the tiebreaker — there is no more `sequence_column` indirection to
-  pick between a SQLite `rowid` and a Postgres sequence, because there is only one backend.
-- The write lock that guards trade atomicity is `pg_advisory_xact_lock`, taken for the duration of
-  `Database.transaction()`. It serializes writes across every connection in the pool — necessary
-  on Vercel, where there is no single process to hold an `asyncio.Lock` in, but just as true for
-  the Docker target's multiple worker connections.
+  written the same way** it always has been. `REAL` maps to `DOUBLE PRECISION`, and every table
+  that needs one carries an explicit `seq BIGSERIAL` column as its ordering tiebreaker — there is
+  no more `sequence_column` indirection to pick between a SQLite `rowid` and a Postgres sequence,
+  because there is only one backend.
+- `Database.transaction()` takes a Postgres `pg_advisory_xact_lock` for its duration, on top of
+  the in-process `asyncio.Lock` (`trade_lock`/`watchlist_lock`, created once in `main.py`'s
+  lifespan) the services already hold. The in-process lock only ever saw one process; the
+  advisory lock is what makes that guarantee hold across every instance too — the case Vercel
+  actually creates, by happily starting more than one concurrent invocation, each with its own
+  separate lock object that cannot see the others.
 - A **pooled** endpoint is required wherever the database is Neon, which means
   `statement_cache_size=0` — pgbouncer in transaction mode breaks asyncpg's prepared statements.
   The local Docker Postgres is unpooled and does not need this, but the setting is harmless there.
