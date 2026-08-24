@@ -50,7 +50,9 @@ HTTP translation only in the router.
 2. **A missing price is an error, never zero.** `formulas.total_value()` raises
    `ValuationUnavailableError`. Do not "helpfully" default it to 0.
 3. **Every write takes the relevant lock** (`trade_lock`, `watchlist_lock`) for the full
-   transaction. aiosqlite serializes statements, not transactions.
+   transaction — a trade is a read-validate-write sequence with await points in between, and
+   without the lock two concurrent trades in the same process could interleave and lose an
+   update. `Database.transaction()` adds a cross-instance advisory lock on top of it.
 4. **`trades` is authoritative.** `positions` and `cash_balance` are a maintained projection.
 5. **`change_percent` is not the daily change.** Use `daily_change_percent`, which is measured from
    `session_open`.

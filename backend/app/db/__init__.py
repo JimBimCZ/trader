@@ -1,26 +1,18 @@
-"""Database layer: connection management, schema, and seed data.
+"""Database layer: connection, schema, migrations, and seed data.
 
 Public API:
-    Database          - what the repositories need, whichever backend is behind it
-    SqliteDatabase    - the container deployment's implementation
-    open_database     - selects Postgres or SQLite from settings
-    open_connection   - open and configure the SQLite connection
+    Database          - the database (Postgres; the alias predates being the only one)
+    open_database     - connect, or fail with a clear message
     init_db           - create the schema (idempotent)
+    run_migrations    - apply forward-only schema changes (idempotent)
     seed_if_empty     - write default profile and watchlist on a fresh database
-    run_migrations    - apply forward-only schema migrations (idempotent)
     DEFAULT_USER_ID   - the hardcoded single-user id
     DEFAULT_WATCHLIST - the ten starting tickers
 """
 
 from __future__ import annotations
 
-from .connection import (
-    DEFAULT_USER_ID,
-    Database,
-    SqliteDatabase,
-    init_db,
-    open_connection,
-)
+from .connection import DEFAULT_USER_ID, Database, init_db
 from .factory import open_database
 from .migrations import run_migrations
 from .seed import DEFAULT_WATCHLIST, seed_if_empty
@@ -29,9 +21,7 @@ __all__ = [
     "DEFAULT_USER_ID",
     "DEFAULT_WATCHLIST",
     "Database",
-    "SqliteDatabase",
     "init_db",
-    "open_connection",
     "open_database",
     "run_migrations",
     "seed_if_empty",

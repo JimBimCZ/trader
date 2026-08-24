@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.market.deterministic import SESSION_SECONDS, seed_price
@@ -125,7 +123,7 @@ class TestBundleIndependence:
             monkeypatch.delitem(sys.modules, module, raising=False)
         monkeypatch.setattr(sys, "meta_path", [self._without("numpy", "massive"), *sys.meta_path])
 
-        settings = Settings(db_path=Path("unused.db"), market_source="deterministic")
+        settings = Settings(market_source="deterministic")
         source = create_market_data_source(create_price_cache(settings), settings)
 
         assert type(source).__name__ == "DeterministicDataSource"

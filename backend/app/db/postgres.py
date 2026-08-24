@@ -1,9 +1,8 @@
-"""Postgres implementation of `Database`, for the serverless deployment.
+"""The Postgres implementation of `Database`.
 
-Serverless functions have no persistent disk, so SQLite has nowhere to live.
-This adapter puts the same schema on Neon without touching a single repository:
-the repositories keep writing SQLite-flavoured SQL with `?` placeholders, and
-`_to_numbered` rewrites those into Postgres's `$1, $2, …` on the way through.
+The repositories write plain SQL with `?` placeholders, which asyncpg does
+not accept; `_to_numbered` rewrites those into `$1, $2, …` on the way
+through, so this is the only file that knows a translation happens.
 """
 
 from __future__ import annotations
@@ -17,8 +16,7 @@ from typing import Any
 
 import asyncpg
 
-from .connection import Database
-from .schema import POSTGRES_SCHEMA_SQL as SCHEMA_SQL
+from .schema import SCHEMA_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +65,8 @@ def normalize_dsn(dsn: str) -> str:
     return dsn
 
 
-class PostgresDatabase(Database):
-    """A `Database` over an asyncpg pool."""
-
-    #: Postgres has no implicit row ordering, so the schema adds one.
-    sequence_column = "seq"
+class PostgresDatabase:
+    """A database over an asyncpg pool."""
 
     def __init__(self, pool: asyncpg.Pool, search_path: str = "") -> None:
         self._pool = pool
@@ -127,7 +122,7 @@ class PostgresDatabase(Database):
         """No-op: statements outside `transaction()` autocommit."""
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[Database]:
+    async def transaction(self) -> AsyncIterator[PostgresDatabase]:
         """Run a block atomically, holding the cross-instance write lock.
 
         The advisory lock is taken inside the transaction and released with it,
@@ -160,3 +155,11 @@ class PostgresDatabase(Database):
 
     async def close(self) -> None:
         await self._pool.close()
+
+    async def is_healthy(self) -> bool:
+        try:
+            await self.fetch_one("SELECT 1")
+        except Exception:
+            logger.exception("Database health check failed")
+            return False
+        return True
