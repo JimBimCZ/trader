@@ -23,6 +23,7 @@ from .db import init_db, open_database, run_migrations, seed_if_empty
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
+from .identity import SessionCookie, UserStore
 from .llm import ActionExecutor, ChatRepository, ChatService, create_chat_client
 from .llm import router as chat_module
 from .market import PriceCache, create_market_data_source, create_price_cache, create_stream_router
@@ -114,6 +115,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await init_db(db)
             await seed_if_empty(db, settings)
             await run_migrations(db)
+
+        app.state.user_store = UserStore(db, settings)
+        app.state.session_cookie = SessionCookie(settings.session_secret)
 
         users = UserRepository(db)
         positions = PositionRepository(db)

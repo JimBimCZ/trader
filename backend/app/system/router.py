@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from ..deps import TradeServiceDep
+from ..deps import CurrentUserDep, TradeServiceDep
 from .service import health_status
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -18,8 +18,11 @@ async def health(request: Request) -> dict:
 
 
 @router.post("/reset")
-async def reset(request: Request, service: TradeServiceDep) -> dict:
+async def reset(request: Request, service: TradeServiceDep, user: CurrentUserDep) -> dict:
     """Restore the seeded starting state and return the fresh portfolio."""
+    # `user` is resolved for its side effects here -- minting a guest and
+    # setting the session cookie. Task 6 scopes the service to it.
+    del user
     await request.app.state.reset_service.reset()
     view = await service.get_portfolio()
     return view.to_dict()

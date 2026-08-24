@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from ..deps import ChatServiceDep
+from ..deps import ChatServiceDep, CurrentUserDep
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -19,14 +19,21 @@ class ChatRequest(BaseModel):
 @router.get("")
 async def get_history(
     service: ChatServiceDep,
+    user: CurrentUserDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> dict:
     """Conversation history, oldest first."""
+    # `user` is resolved for its side effects here -- minting a guest and
+    # setting the session cookie. Task 6 scopes the service to it.
+    del user
     messages = await service.list_history(limit=limit)
     return {"messages": [m.to_dict() for m in messages]}
 
 
 @router.post("")
-async def send_message(body: ChatRequest, service: ChatServiceDep) -> dict:
+async def send_message(body: ChatRequest, service: ChatServiceDep, user: CurrentUserDep) -> dict:
+    # `user` is resolved for its side effects here -- minting a guest and
+    # setting the session cookie. Task 6 scopes the service to it.
+    del user
     reply = await service.send_message(body.message)
     return reply.to_dict()
