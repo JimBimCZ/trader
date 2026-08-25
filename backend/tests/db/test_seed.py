@@ -41,6 +41,14 @@ class TestSeedUser:
         assert len(rows) == len(DEFAULT_WATCHLIST)
         assert len({row["ticker"] for row in rows}) == len(DEFAULT_WATCHLIST)
 
+        # The t=0 snapshot is guarded too. Unguarded, a repair pass would put
+        # a second `initial_cash` point, dated today, into a chart that has
+        # long since moved off that value.
+        snapshots = await db.fetch_all(
+            "SELECT total_value FROM portfolio_snapshots WHERE user_id = 'alice'"
+        )
+        assert len(snapshots) == 1
+
     async def test_seeds_canonical_tickers(self, db: Database, settings: Settings):
         """Seeded tickers go through the same canonicalization as user input."""
         await create_seeded_user(db, settings, "alice")

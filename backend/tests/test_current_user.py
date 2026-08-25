@@ -2,7 +2,29 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from app.identity import COOKIE_NAME
+
+
+@pytest.fixture
+def bounded_stream_client(settings):
+    """A client whose SSE stream closes itself, so a test can read it whole."""
+    import asyncio
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from tests.conftest import CLIENT_BASE_URL, _drop_schema
+
+    bounded = dataclasses.replace(settings, stream_max_seconds=0.05)
+    try:
+        with TestClient(create_app(bounded), base_url=CLIENT_BASE_URL) as client:
+            yield client
+    finally:
+        asyncio.run(_drop_schema(bounded.database_url, bounded.db_schema))
 
 
 class TestGuestMinting:
@@ -49,6 +71,20 @@ class TestExemptRoutes:
 
     def test_health_still_works_with_no_users_at_all(self, api_client):
         assert api_client.get("/api/health").json()["status"] == "ok"
+
+    def test_the_price_stream_does_not_mint_a_guest(self, bounded_stream_client):
+        """The other exempt route. A long-lived EventSource that minted on
+        connect would create a row for every reconnect, forever.
+
+        Driven through a client whose stream closes itself after 50ms: the
+        stream is otherwise endless, and TestClient runs the app in a portal
+        that waits for the response generator to finish.
+        """
+        response = bounded_stream_client.get("/api/stream/prices")
+
+        assert response.status_code == 200
+        assert "set-cookie" not in response.headers
+        assert COOKIE_NAME not in response.cookies
 
 
 class TestSecureFlagFollowsTheScheme:

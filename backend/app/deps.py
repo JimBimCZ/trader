@@ -58,6 +58,12 @@ def _request_is_https(request: Request) -> bool:
     `http` there even though the browser is on https. A proxy chain sends a
     comma-separated list, oldest first, and the first entry is the one the
     browser actually used.
+
+    That header is client-controlled on a direct connection, and trusting it
+    is deliberate: the only thing it decides is whether *this* response's
+    cookie carries `Secure`. Forging `https` over plain http makes the
+    forger's own cookie undeliverable to themselves and reaches nobody else,
+    so there is nothing here to escalate. It is not an authorization input.
     """
     forwarded = request.headers.get("x-forwarded-proto")
     scheme = forwarded.split(",")[0].strip() if forwarded else request.url.scheme

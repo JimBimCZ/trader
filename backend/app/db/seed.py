@@ -51,9 +51,15 @@ async def seed_user(db: Database, settings: Settings, user_id: str) -> None:
             "ON CONFLICT (user_id, ticker) DO NOTHING",
             (str(uuid.uuid4()), user_id, canonicalize_ticker(ticker), now),
         )
+    # Guarded the way the watchlist inserts are, so the whole function is
+    # idempotent: a re-seed that repaired missing rows would otherwise inject
+    # a second `initial_cash` point, dated today, into a chart that has moved
+    # on since. Reset deletes this user's snapshots inside the same
+    # transaction, so it still gets its fresh t=0 point.
     await db.execute(
         "INSERT INTO portfolio_snapshots (id, user_id, total_value, recorded_at) "
-        "VALUES (?, ?, ?, ?)",
-        (str(uuid.uuid4()), user_id, settings.initial_cash, now),
+        "SELECT ?, ?, ?, ? "
+        "WHERE NOT EXISTS (SELECT 1 FROM portfolio_snapshots WHERE user_id = ?)",
+        (str(uuid.uuid4()), user_id, settings.initial_cash, now, user_id),
     )
     logger.info("Seeded %d watchlist tickers for %s", len(DEFAULT_WATCHLIST), user_id)

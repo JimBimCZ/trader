@@ -13,6 +13,7 @@ from app.errors import (
     InvalidTickerError,
     PriceUnavailableError,
 )
+from tests.conftest import TEST_USER_ID
 
 
 class TestBuy:
@@ -279,6 +280,9 @@ class TestBuildTradeService:
         await service.write_snapshot()
         assert len(await service.get_history()) == 2
 
-        # Nothing leaks onto anybody else's snapshot history.
-        stranger = build_trade_service(seeded_db, settings, price_cache, "stranger")
-        assert await stranger.get_history() == []
+        # Nothing leaks onto anybody else's snapshot history. Checked against
+        # a user who demonstrably has rows -- their own t=0 point, and only
+        # that -- because an empty result for a user who does not exist would
+        # be empty however badly the scoping were broken.
+        neighbour = build_trade_service(seeded_db, settings, price_cache, TEST_USER_ID)
+        assert len(await neighbour.get_history()) == 1

@@ -9,6 +9,45 @@ to hold through the whole dependency chain.
 
 from __future__ import annotations
 
+from app.identity import COOKIE_NAME
+
+
+class TestTheClientsAreActuallyTwoUsers:
+    """The guard the rest of this file depends on.
+
+    Every other test here reads "A cannot see B's rows", and each of them is
+    also satisfied by "neither client has any rows at all". A session that
+    fails to round-trip -- a Secure cookie on a plain-http request was the
+    real instance of this -- mints a fresh guest per request and makes four of
+    them pass while proving nothing. This one fails in that mode instead.
+    """
+
+    def test_the_two_clients_hold_different_stable_identities(self, api_client, second_client):
+        api_client.post(
+            "/api/portfolio/trade",
+            json={"ticker": "AAPL", "quantity": 5, "side": "buy"},
+        )
+        second_client.post(
+            "/api/portfolio/trade",
+            json={"ticker": "NVDA", "quantity": 2, "side": "buy"},
+        )
+
+        mine = api_client.cookies.get(COOKIE_NAME)
+        theirs = second_client.cookies.get(COOKIE_NAME)
+        assert mine, "the first client holds no session cookie"
+        assert theirs, "the second client holds no session cookie"
+        assert mine != theirs, "both clients are the same user, so nothing here is isolated"
+
+        # Stable, not just distinct: a later request must resolve to the same
+        # user, which is only observable through rows that request did not
+        # write.
+        assert [p["ticker"] for p in api_client.get("/api/portfolio").json()["positions"]] == [
+            "AAPL"
+        ]
+        assert [p["ticker"] for p in second_client.get("/api/portfolio").json()["positions"]] == [
+            "NVDA"
+        ]
+
 
 class TestPortfolioIsolation:
     def test_a_trade_by_one_user_is_invisible_to_another(self, api_client, second_client):
