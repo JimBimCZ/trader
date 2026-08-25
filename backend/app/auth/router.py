@@ -227,3 +227,24 @@ async def claim(body: ClaimRequest, request: Request) -> Response:
     response = Response(status_code=200)
     set_session_cookie(request, response, request.app.state.session_cookie, target_id)
     return response
+
+
+@router.get("/dev-login/{user_id}")
+async def dev_login(request: Request, user_id: str):
+    """Sign a session for an arbitrary user, with no provider involved.
+
+    E2E only. This is unauthenticated session forgery: anyone who can reach it
+    can become any user by guessing an id. It answers 404 rather than 403 when
+    `AUTH_MOCK` is unset, so a deployment that has it switched off does not
+    advertise that the route exists.
+    """
+    if not request.app.state.settings.auth_mock:
+        raise AuthProviderUnavailableError("Not found.")
+
+    user = await request.app.state.user_store.get(user_id)
+    if user is None:
+        raise AuthProviderUnavailableError("No such user.")
+
+    response = RedirectResponse("/", status_code=307)
+    set_session_cookie(request, response, request.app.state.session_cookie, user.id)
+    return response
