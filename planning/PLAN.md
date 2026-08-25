@@ -12,6 +12,14 @@ This is the capstone project for an agentic AI coding course. It is built entire
 
 ### First Launch
 
+*Revised 2026-08-25: sign-in exists, and is optional. The first run is
+unchanged — no login, no signup, a seeded guest portfolio on first request —
+but a visitor can now attach that portfolio to a Google or GitHub account so
+it survives a change of browser. With no OAuth credentials configured, which
+is the default and what `docker compose up` does, no sign-in control is
+rendered at all and this section describes the app exactly. See
+`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` §5 and §9.*
+
 The user runs a single Docker command (or a provided start script). A browser opens to `http://localhost:8000`. No login, no signup. They immediately see:
 
 - A watchlist of 10 default tickers with live-updating prices in a grid
@@ -221,6 +229,11 @@ needs to reference. See §7 and §11.*
 
 ## 5. Environment Variables
 
+*Revised 2026-08-25: added the five sign-in variables (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL`) and `AUTH_MOCK`. All are optional;
+absent, the app is exactly what it was before sign-in existed. See §2 and
+`planning/API_CONTRACT.md` §0.1.*
+
 ```bash
 # Required: Postgres connection string. The app refuses to start without one.
 DATABASE_URL=postgresql://trader:trader@localhost:5432/trader
@@ -234,6 +247,22 @@ MASSIVE_API_KEY=
 
 # Optional: Set to "true" for deterministic mock LLM responses (testing)
 LLM_MOCK=false
+
+# Optional: OAuth sign-in. Both halves of a pair are required for that
+# provider to be offered; either or both pairs may be left unset entirely.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# Optional: origin the browser reaches the app on, used to build the OAuth
+# callback URL. Empty derives it from the request.
+PUBLIC_BASE_URL=
+
+# Optional, E2E only: enables GET /api/auth/dev-login/{user_id}, an
+# unauthenticated route that signs a session for any user with no provider
+# involved. Never set this in production.
+AUTH_MOCK=false
 ```
 
 ### Behavior
@@ -248,6 +277,16 @@ LLM_MOCK=false
 - If `MASSIVE_API_KEY` is absent or empty → backend uses the built-in market simulator
 - If `LLM_MOCK=true` → backend returns deterministic mock LLM responses (for E2E tests)
 - The backend reads `.env` from the project root (mounted into the container or read via docker `--env-file`)
+- A provider is offered only when both its client id and secret are set; either alone is treated as
+  unconfigured. With neither Google nor GitHub configured — the default, and what `docker compose up`
+  does out of the box — no sign-in control is rendered at all.
+- `PUBLIC_BASE_URL`, when set, wins over deriving the callback origin from the incoming request —
+  needed behind a proxy that rewrites the host, where the derived origin would be one the provider
+  rejects.
+- `AUTH_MOCK=true` enables `GET /api/auth/dev-login/{user_id}`, unauthenticated session forgery
+  used by the E2E suite to move a session to a known user without a real provider round trip. The
+  route answers 404 when this is unset (the default), so a production deployment does not even
+  reveal that it exists.
 
 ---
 
@@ -427,6 +466,23 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Health check (for Docker/deployment) |
+
+### Sign-in
+
+*Added 2026-08-25. Optional: with no `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` configured, `/providers` reports an empty list and the
+other five routes still exist but have nothing to offer. Full request/response shapes and the four
+new error codes are in `planning/API_CONTRACT.md` §0.1.*
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/auth/providers` | Which providers this deployment can offer. Does **not** resolve or mint a caller. |
+| GET | `/api/auth/login/{provider}` | Redirects the browser to the provider's consent screen. |
+| GET | `/api/auth/callback/{provider}` | Completes the OAuth exchange and acts on the sign-in decision (§5.1 of the design doc): promote the current guest, switch to an existing account, create a fresh account, or — on a collision with real guest activity — redirect back with a claim token instead of a cookie. |
+| GET | `/api/auth/me` | Who the caller is. **Resolves and mints a guest** when there is none — this is the call the frontend makes on mount, and it is where a first-time visitor's account comes from. |
+| POST | `/api/auth/logout` | Drops the session cookie. The next caller-resolving request mints a fresh guest. |
+| POST | `/api/auth/claim` | Completes a contested sign-in the user confirmed: `{token}` → the session moves to the account the token names. |
+| GET | `/api/auth/dev-login/{user_id}` | E2E only, 404 unless `AUTH_MOCK=true`: signs a session for an arbitrary user id with no provider involved. |
 
 ---
 

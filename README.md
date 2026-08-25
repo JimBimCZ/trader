@@ -4,7 +4,7 @@ A visually dense trading terminal: live streaming prices, a simulated $10,000 po
 LLM assistant that can analyze your positions and execute trades on your behalf.
 
 The app itself runs in one container on one port — `docker compose` also starts a companion
-Postgres. No login, no signup, no real money.
+Postgres. No login required, no real money — sign-in is optional, see below.
 
 ![Trader](docs/screenshot.png)
 
@@ -28,11 +28,11 @@ work identically if you prefer.
 Your portfolio persists in the `trader-pgdata` Docker volume between restarts. `docker compose
 down -v` wipes that volume and starts you over at $10k; the in-app reset still works too.
 
-The app is multi-user, but there is still no sign-in (that's a later phase). The first request a
-browser makes mints an anonymous guest and points a signed `trader_session` cookie at it; every
-later request from that browser resolves back to the same row. Two browsers get two independent
-$10k portfolios from the same running app. Clear cookies, or lose the cookie some other way, and
-that guest's data is unreachable — there is no password or email to recover it with.
+The app is multi-user. The first request a browser makes mints an anonymous guest and points a
+signed `trader_session` cookie at it; every later request from that browser resolves back to the
+same row. Two browsers get two independent $10k portfolios from the same running app. Clear
+cookies, or lose the cookie some other way, and that guest's data is unreachable — unless you sign
+in (below), there is no password or email to recover it with.
 
 ## What you can do
 
@@ -45,6 +45,37 @@ that guest's data is unreachable — there is no password or email to recover it
   value chart, and a positions table with live return figures.
 - **Talk to the assistant** — "how is my portfolio doing?", "buy 10 AAPL", "add PYPL to my
   watchlist". It executes trades directly, and shows each one inline as it happens.
+
+## Signing in (optional)
+
+Skipping this section leaves the app exactly as described above: a guest portfolio, no account, no
+password. Sign-in is additive — it lets a guest attach their portfolio to a Google or GitHub
+account so it survives clearing cookies or switching browsers. With no credentials configured
+(the quick start above, unmodified), no sign-in button is rendered at all.
+
+To turn it on:
+
+1. **Register an OAuth app with the provider(s) you want**, using this callback URL:
+   - Google (Google Cloud Console → APIs & Services → Credentials → OAuth client ID, type "Web
+     application"): `http://localhost:8000/api/auth/callback/google` for local Docker use, or
+     `https://<your-domain>/api/auth/callback/google` in production.
+   - GitHub (Settings → Developer settings → OAuth Apps → New OAuth App): same pattern,
+     `.../api/auth/callback/github`.
+2. **Set the credentials in `.env`** (or your platform's environment variables): `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Either pair alone is enough
+   to offer that one provider — you don't need both.
+3. **Set `PUBLIC_BASE_URL`** to the origin the browser reaches the app on, if you're behind a proxy
+   that rewrites the host (this includes most cloud deployments — see
+   `planning/VERCEL_DEPLOYMENT.md`). Local Docker on `localhost:8000` doesn't need it.
+
+A returning identity always wins over a guest's local activity: signing in on a browser that
+already has a portfolio attached elsewhere opens *that* account, and asks for confirmation first if
+it would discard something. Identities are matched by provider + provider account id, never by
+email address — matching by email would let anyone who controls an address on one provider walk
+into an account created with a different, unverified provider.
+
+`AUTH_MOCK=true` enables an unauthenticated dev-login route used only by the E2E suite
+(`test/docker-compose.test.yml`); never set it outside that suite.
 
 ## Configuration
 
@@ -65,6 +96,10 @@ with `--env-file`.
 | `GUEST_TTL_DAYS` | No | `7` | Days of inactivity (`last_seen_at`) after which a guest account — and everything that cascades from it: watchlist, positions, trades, chat — is deleted. |
 | `CLEANUP_SECRET` | No | empty | Shared secret required (as the `X-Cleanup-Secret` header) to call `POST`/`GET /api/admin/cleanup`, which deletes guests past `GUEST_TTL_DAYS`. Unset, the route refuses every call — the safe default for an endpoint that deletes rows. |
 | `CRON_SECRET` | No | empty | Fallback for `CLEANUP_SECRET`, checked against an `Authorization: Bearer` header instead of `X-Cleanup-Secret`. This is Vercel's own convention — it auto-attaches that header to every Cron invocation — so a Vercel deployment sets this one and needs nothing else for the scheduled cleanup to authenticate. Not used by the Docker target, which has no Cron. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | empty | Enables Google sign-in (see "Signing in" above). Both halves required; one alone is treated as unconfigured. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | No | empty | Enables GitHub sign-in. Same both-halves rule as Google. |
+| `PUBLIC_BASE_URL` | No | empty | Origin the browser reaches the app on, used to build the OAuth callback URL. Empty derives it from the request; set it explicitly behind a proxy that rewrites the host. |
+| `AUTH_MOCK` | No | `false` | `true` enables `GET /api/auth/dev-login/{user_id}`, unauthenticated session forgery used only by the E2E suite. Never set this outside `test/docker-compose.test.yml`. |
 
 ### Market data
 
@@ -150,7 +185,9 @@ authenticate that hit. `planning/VERCEL_DEPLOYMENT.md` has the detail.
 
 ## Safety note
 
-The app has no sign-in — every visitor is an anonymous guest, minted automatically — and executes
-trades without confirmation, so the container binds to `127.0.0.1` only. It is a demo with
-imaginary money and no way to prove who a guest is beyond holding their cookie; do not expose it to
-a network. See `SESSION_SECRET` above for the sharpest consequence of running it unconfigured.
+Every visitor is an anonymous guest by default, minted automatically, and every trade executes
+without confirmation — sign-in (above) is optional and does not change either of those, it only
+lets a guest attach their own portfolio to an account. The container binds to `127.0.0.1` only. It
+is a demo with imaginary money and, absent sign-in, no way to prove who a guest is beyond holding
+their cookie; do not expose it to a network. See `SESSION_SECRET` above for the sharpest
+consequence of running it unconfigured.
