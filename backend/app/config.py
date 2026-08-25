@@ -7,10 +7,14 @@ project-root .env exists to read.
 
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 from dataclasses import dataclass
 
 from .errors import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -69,7 +73,29 @@ class Settings:
 
     # Domain limits
     watchlist_cap: int = 25
+
+    #: Bounds simulator work and Massive polling cost across all users.
+    market_capacity: int = 100
     initial_cash: float = 10_000.0
+
+    #: Signs the session cookie that identifies a user. See `from_env` for
+    #: what happens when it is unset.
+    session_secret: str = ""
+
+    #: Days of inactivity after which a guest (never a signed-in user) is
+    #: deleted, cascading away its watchlist, positions, trades, and chat.
+    guest_ttl_days: int = 7
+
+    #: Guards POST/GET /api/admin/cleanup, which deletes idle guest accounts.
+    #: Unset, the endpoint refuses every call -- the safe default for a route
+    #: that deletes rows. Resolved in `from_env` from CLEANUP_SECRET, falling
+    #: back to CRON_SECRET -- Vercel's own convention, so a Vercel deployment
+    #: needs to set only the one variable its own docs already tell it to.
+    cleanup_secret: str = ""
+
+    #: Minimum gap between `last_seen_at` writes for the same user, so an
+    #: unthrottled hot path doesn't turn every GET into a Neon round trip.
+    last_seen_throttle_seconds: float = 300.0
 
     # History ring buffer
     history_maxlen: int = 600
@@ -127,6 +153,18 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        # A generated secret is correct for local dev and catastrophic in
+        # production: it changes on every restart, which signs out every user
+        # and permanently orphans every guest portfolio, since the cookie is
+        # the only pointer to the row.
+        session_secret = os.environ.get("SESSION_SECRET", "").strip()
+        if not session_secret:
+            session_secret = secrets.token_urlsafe(32)
+            logger.warning(
+                "SESSION_SECRET is not set; generated an ephemeral one. Every "
+                "restart will sign out all users and orphan every guest "
+                "portfolio. Set it before deploying."
+            )
         return cls(
             massive_api_key=os.environ.get("MASSIVE_API_KEY", ""),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY", ""),
@@ -143,4 +181,21 @@ class Settings:
                 "MARKET_SOURCE", "deterministic" if os.environ.get("VERCEL") else ""
             ).strip(),
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
+            session_secret=session_secret,
+            # Floored at one day. 0 already fell back to 7 through `or`, but a
+            # negative value sailed through and inverted the cleanup: the
+            # cutoff lands in the future, `last_seen_at < <tomorrow>` matches
+            # every guest, and the next sweep cascades away every watchlist,
+            # position, trade, chat message and snapshot in the database. A
+            # typo'd sign in a dashboard variable must not be total data loss.
+            guest_ttl_days=max(1, _env_int("GUEST_TTL_DAYS", 7) or 7),
+            # CLEANUP_SECRET takes precedence; CRON_SECRET is the fallback so
+            # a Vercel deployment that only sets the variable Vercel's own
+            # docs prescribe (for its auto-sent `Authorization: Bearer
+            # $CRON_SECRET`) still guards this route without a second,
+            # duplicate variable.
+            cleanup_secret=(
+                os.environ.get("CLEANUP_SECRET", "").strip()
+                or os.environ.get("CRON_SECRET", "").strip()
+            ),
         )

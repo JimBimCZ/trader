@@ -205,10 +205,14 @@ needs to reference. See §7 and §11.*
 - **`backend/`** is a self-contained uv project with its own `pyproject.toml`. It owns all server logic including database initialization, schema, seed data, API routes, SSE streaming, market data, and LLM integration. Internal structure is up to the Backend/Market Data agents.
 - **`backend/app/db/`** contains the Postgres schema, connection handling, seed logic, and the
   forward-only migration runner. Startup is eager, in the FastAPI lifespan, not lazy on first
-  request: `init_db` creates the schema if it is missing, `seed_if_empty` seeds default data, then
-  `run_migrations` re-runs every migration statement, in order, on every startup — there is no
-  version table recording which have already run; every statement is written to be safe to run
-  again, so idempotency does the job bookkeeping would otherwise do.
+  request: `init_db` creates the schema if it is missing, then `run_migrations` re-runs every
+  migration statement, in order, on every startup — there is no version table recording which have
+  already run; every statement is written to be safe to run again, so idempotency does the job
+  bookkeeping would otherwise do.
+  *Revised 2026-08-25: `seed_if_empty` is gone from this sequence, and from the codebase. With the
+  app multi-user there is no "the" user to seed at startup — a fresh database holds no users at
+  all until the first request mints a guest, and `seed_user` seeds that one row's watchlist and
+  t=0 snapshot inside the same transaction that creates it. See §7 and `app/identity/store.py`.*
 - **`planning/`** contains project-wide documentation, including this plan. All agents reference files here as the shared contract.
 - **`test/`** contains Playwright E2E tests and supporting infrastructure (e.g., `docker-compose.test.yml`). Unit tests live within `frontend/` and `backend/` respectively, following each framework's conventions.
 - **`scripts/`** contains start/stop scripts that wrap Docker commands.
@@ -279,11 +283,23 @@ Both the simulator and the Massive client implement the same abstract interface.
 
 ### SSE Streaming
 
+*Revised 2026-08-25: the app is multi-user now (see the dated note under §7), so "the user's
+watchlist" below no longer names a single list. The stream still pushes exactly one shared set of
+tickers to every connection — see the note.*
+
 - Endpoint: `GET /api/stream/prices`
 - Long-lived SSE connection; client uses native `EventSource` API
 - Server pushes price updates for all tickers known to the system at a regular cadence (~500ms) — in the single-user model this is equivalent to the user's watchlist
 - Each SSE event contains ticker, price, previous price, timestamp, and change direction
 - Client handles reconnection automatically (EventSource has built-in retry)
+
+*Revised 2026-08-25: "all tickers known to the system" is now precisely
+`union(every user's watchlist, every user's open positions)` — computed globally in
+`app/reconcile.py`, not per caller. `GET /api/stream/prices` never resolves a caller at all (one of
+four routes that never mint a session guest — the others are `GET /api/health`,
+`GET`/`POST /api/admin/cleanup`, and the SPA catch-all that serves the static frontend); it
+serves this one global set of tickers identically to every connection. See
+`planning/API_CONTRACT.md` §0 and §2, and `planning/BACKEND_SUMMARY.md`.*
 
 ---
 
@@ -293,6 +309,13 @@ Both the simulator and the Massive client implement the same abstract interface.
 
 *Revised 2026-08-24: the database is Postgres, reached via `DATABASE_URL`, not SQLite. See the
 dated note under §3.*
+
+*Revised 2026-08-25: `seed_if_empty` in the startup order below no longer exists. Once the app
+became multi-user, "seed default data into an empty database" stopped meaning anything — there is
+no longer one default row to seed at startup, only whichever guests get minted over the process's
+lifetime. Startup is now `init_db` → `run_migrations`, and each guest is seeded individually, in
+the same transaction as its `users_profile` row, at the moment `UserStore.mint_guest()` creates it
+(`app/identity/store.py`). See the dated note under "Schema" below.*
 
 The backend connects to Postgres in the FastAPI lifespan, before the market source starts —
 eagerly, not lazily on first request, because `MarketDataSource.start(tickers)` needs the ticker
@@ -308,6 +331,18 @@ order, on every startup). This means:
 - `DATABASE_URL` must point at a reachable Postgres before the app will start at all
 
 ### Schema
+
+*Revised 2026-08-25: per-user scoping landed
+(`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`). `DEFAULT_USER_ID` is deleted from the
+codebase entirely — every repository constructor now requires an explicit `user_id`, with no
+fallback. Rows no longer belong to a single hardcoded `"default"` row; they belong to whichever
+user a signed `trader_session` cookie resolves to, minted automatically (as a guest — there is
+still no sign-in; that is a later phase) the first time a browser arrives without one. The
+`"default"` value described below, and the single seeded profile under "Default Seed Data", are
+what this build actually shipped, before that migration; a fresh database today seeds nothing at
+startup and instead seeds each guest individually, in the same transaction as its `users_profile`
+row, the moment it is minted. See `planning/API_CONTRACT.md` §0 and `planning/BACKEND_SUMMARY.md`
+for the current mechanism, and `planning/DECISIONS.md` for the decisions this superseded.*
 
 All tables include a `user_id` column defaulting to `"default"`. This is hardcoded for now (single-user) but enables future multi-user support without schema migration.
 

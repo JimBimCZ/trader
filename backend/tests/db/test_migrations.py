@@ -15,6 +15,7 @@ import pytest
 from app.db import init_db
 from app.db.migrations import MIGRATIONS, run_migrations
 from app.db.postgres import PostgresDatabase, normalize_dsn
+from tests.conftest import create_seeded_user
 
 PER_USER_TABLES = ["watchlist", "positions", "trades", "portfolio_snapshots", "chat_messages"]
 
@@ -32,14 +33,12 @@ class TestIdempotency:
 
 
 class TestSeedingSurvivesMigration:
-    async def test_a_fresh_database_still_gets_its_watchlist(self, db, settings):
-        """Seeding before migrating (the order `main.py`'s lifespan hard-codes)
-        leaves a fresh install with its full default watchlist, not just cash.
-        Migration 001 depends on this order -- it adds a foreign key from
-        `watchlist.user_id` to a profile row that must already exist."""
-        from app.db.seed import seed_if_empty
-
-        await seed_if_empty(db, settings)
+    async def test_a_seeded_user_still_gets_their_watchlist(self, db, settings):
+        """Seeding a user before migrating leaves them their full default
+        watchlist, not just cash. Migration 001 depends on that order -- it
+        adds a foreign key from `watchlist.user_id` to a profile row that must
+        already exist."""
+        await create_seeded_user(db, settings, "alice")
         await run_migrations(db)
 
         row = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
@@ -67,14 +66,12 @@ class TestForeignKeys:
 
     async def test_deleting_a_user_removes_their_rows(self, db, settings):
         """This cascade is what makes guest expiry a single DELETE."""
-        from app.db.seed import seed_if_empty
-
-        await seed_if_empty(db, settings)
+        await create_seeded_user(db, settings, "alice")
         await run_migrations(db)
         before = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert before["n"] == 10
 
-        await db.execute("DELETE FROM users_profile WHERE id = ?", ("default",))
+        await db.execute("DELETE FROM users_profile WHERE id = ?", ("alice",))
 
         after = await db.fetch_one("SELECT COUNT(*) AS n FROM watchlist")
         assert after["n"] == 0
@@ -115,3 +112,70 @@ class TestForeignKeyGuardIsSchemaScoped:
                 await admin.execute(f'DROP SCHEMA IF EXISTS "{other_schema}" CASCADE')
             finally:
                 await admin.close()
+
+
+class TestMigration002AddsIdentityColumns:
+    async def test_kind_and_last_seen_at_exist_after_migrating(self, db):
+        await run_migrations(db)
+
+        rows = await db.fetch_all(
+            "SELECT column_name, is_nullable, column_default "
+            "FROM information_schema.columns "
+            "WHERE table_name = 'users_profile' AND table_schema = current_schema()"
+        )
+        columns = {row["column_name"]: row for row in rows}
+
+        assert "kind" in columns
+        assert columns["kind"]["is_nullable"] == "NO"
+        assert "guest" in (columns["kind"]["column_default"] or "")
+        assert "last_seen_at" in columns
+        assert columns["last_seen_at"]["is_nullable"] == "NO"
+
+    async def test_kind_rejects_a_value_outside_the_check(self, db):
+        await run_migrations(db)
+        await db.execute(
+            "INSERT INTO users_profile (id, cash_balance, created_at, last_seen_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("check-probe", 10000.0, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+
+        import asyncpg
+
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await db.execute(
+                "UPDATE users_profile SET kind = 'admin' WHERE id = ?", ("check-probe",)
+            )
+
+    async def test_the_kind_seen_index_exists(self, db):
+        await run_migrations(db)
+        rows = await db.fetch_all(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE tablename = 'users_profile' AND schemaname = current_schema()"
+        )
+        assert "idx_users_kind_seen" in {row["indexname"] for row in rows}
+
+    async def test_last_seen_at_backfill_produces_a_real_timestamp(self, db):
+        """Regression for a silently no-opped backfill.
+
+        `last_seen_at` is `NOT NULL DEFAULT ''`, so a typo'd `WHERE` or `SET`
+        in the backfill statement would still satisfy NOT NULL and pass every
+        other test here -- '' is a valid non-null string. The guest cleaner
+        deletes rows where `last_seen_at < cutoff`, and an empty string sorts
+        before every ISO timestamp, so a no-opped backfill would make the
+        cleaner delete every pre-existing guest on its first run. This test
+        inserts a row simulating one that predates the column (relying on the
+        column's own default of ''), then asserts the backfill actually ran.
+        """
+        await db.execute(
+            "INSERT INTO users_profile (id, cash_balance, created_at) VALUES (?, ?, ?)",
+            ("predates-last-seen-at", 10000.0, "2020-06-15T12:00:00Z"),
+        )
+
+        await run_migrations(db)
+
+        row = await db.fetch_one(
+            "SELECT created_at, last_seen_at FROM users_profile WHERE id = ?",
+            ("predates-last-seen-at",),
+        )
+        assert row["last_seen_at"] != ""
+        assert row["last_seen_at"] == row["created_at"]

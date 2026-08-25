@@ -60,6 +60,33 @@ class TestAdd:
             await services.watchlist_service.add(ticker)
         assert len(await services.watchlist_service.add("AAPL")) == 25
 
+    async def test_a_capacity_failure_does_not_persist_the_watchlist_row(self, services):
+        """Regression: ensure_tracked used to run after the DB commit, so a
+        global-capacity failure left the ticker stuck in the watchlist forever
+        -- retrying add() short-circuits on contains() before ever reaching
+        ensure_tracked again. The write must not land until tracking succeeds.
+        """
+        import asyncio
+
+        from app.errors import MarketCapacityFullError
+        from app.reconcile import TickerReconciler
+        from app.watchlist.service import WatchlistService
+
+        capacity = len(services.source.get_tickers())
+        tight_reconciler = TickerReconciler(services.source, services.db, capacity)
+        watchlist_service = WatchlistService(
+            services.db,
+            services.watchlist_repo,
+            tight_reconciler,
+            asyncio.Lock(),
+            services.settings.watchlist_cap,
+        )
+
+        with pytest.raises(MarketCapacityFullError):
+            await watchlist_service.add("PYPL")
+
+        assert "PYPL" not in await services.watchlist_repo.list()
+
 
 class TestRemove:
     async def test_removes_the_ticker(self, services):

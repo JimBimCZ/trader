@@ -64,20 +64,26 @@ class StubDataSource(MarketDataSource):
 class Services:
     """Everything a service-level test needs, wired together."""
 
-    def __init__(self, db: Database, settings: Settings, price_cache: PriceCache) -> None:
+    def __init__(
+        self, db: Database, settings: Settings, price_cache: PriceCache, user_id: str
+    ) -> None:
         self.db = db
         self.settings = settings
         self.price_cache = price_cache
+        self.user_id = user_id
 
-        self.users = UserRepository(db)
-        self.positions = PositionRepository(db)
-        self.trades = TradeRepository(db)
-        self.snapshots = SnapshotRepository(db)
-        self.watchlist_repo = WatchlistRepository(db)
-        self.chat_repo = ChatRepository(db)
+        # Passed explicitly rather than defaulted here: a repository with no
+        # user reads someone else's rows, so the whole point of the change is
+        # that there is nowhere left for that id to come from implicitly.
+        self.users = UserRepository(db, user_id)
+        self.positions = PositionRepository(db, user_id)
+        self.trades = TradeRepository(db, user_id)
+        self.snapshots = SnapshotRepository(db, user_id)
+        self.watchlist_repo = WatchlistRepository(db, user_id)
+        self.chat_repo = ChatRepository(db, user_id)
 
         self.source = StubDataSource(price_cache)
-        self.reconciler = TickerReconciler(self.source, self.watchlist_repo, self.positions)
+        self.reconciler = TickerReconciler(self.source, db, settings.market_capacity)
 
         self.trade_lock = asyncio.Lock()
         self.watchlist_lock = asyncio.Lock()
@@ -89,6 +95,7 @@ class Services:
             self.trades,
             self.snapshots,
             price_cache,
+            settings,
             self.reconciler,
             self.trade_lock,
         )

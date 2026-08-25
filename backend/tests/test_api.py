@@ -78,8 +78,9 @@ class TestPortfolioRoutes:
         )
         assert response.status_code == 422
 
-    def test_history_has_a_point_from_startup(self, api_client):
-        """The writer records at t=0 so the chart is never empty."""
+    def test_history_has_a_point_from_the_moment_the_user_exists(self, api_client):
+        """Seeding a user writes their t=0 point, so the chart is never empty
+        -- not even in the gap before the writer's first tick."""
         snapshots = api_client.get("/api/portfolio/history").json()["snapshots"]
         assert len(snapshots) >= 1
         assert snapshots[0]["total_value"] == 10_000.0

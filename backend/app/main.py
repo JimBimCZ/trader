@@ -19,29 +19,21 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from .config import Settings
-from .db import init_db, open_database, run_migrations, seed_if_empty
+from .db import init_db, open_database, run_migrations
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
 from .history import HistoryCollector, HistoryStore
 from .history import router as history_module
-from .llm import ActionExecutor, ChatRepository, ChatService, create_chat_client
+from .identity import SessionCookie, UserStore
+from .llm import create_chat_client
 from .llm import router as chat_module
 from .market import PriceCache, create_market_data_source, create_price_cache, create_stream_router
 from .market.deterministic_source import DeterministicPriceCache
 from .portfolio import router as portfolio_module
-from .portfolio.repository import (
-    PositionRepository,
-    SnapshotRepository,
-    TradeRepository,
-    UserRepository,
-)
-from .portfolio.service import TradeService
 from .portfolio.snapshot_writer import SnapshotWriter
 from .reconcile import TickerReconciler
 from .system import router as system_module
-from .system.service import ResetService
+from .system.cleanup import GuestCleaner
 from .watchlist import router as watchlist_module
-from .watchlist.repository import WatchlistRepository
-from .watchlist.service import WatchlistService
 
 logger = logging.getLogger(__name__)
 
@@ -100,31 +92,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Wrapped in one transaction, holding the cross-instance advisory
         # lock for its whole duration: Vercel starts more than one instance
         # concurrently, and each runs this same sequence on cold start.
-        # Un-locked, two instances race three separate check-then-act steps
-        # (CREATE TABLE IF NOT EXISTS, the seed SELECT-then-INSERT, and the
-        # ADD CONSTRAINT existence check) and one loses with a
-        # UniqueViolationError / DuplicateObjectError instead of just
+        # Un-locked, two instances race two separate check-then-act steps
+        # (CREATE TABLE IF NOT EXISTS and the ADD CONSTRAINT existence
+        # check) and one loses with a DuplicateObjectError instead of just
         # waiting its turn. ADD CONSTRAINT is transactional in Postgres, so
         # a transaction is sufficient -- no separate advisory-lock call
         # needed beyond what transaction() already takes.
-        # Seeding must still precede migrating: migration 001 adds foreign
-        # keys to users_profile, and every per-user row must already point
-        # at a profile that exists.
+        # Nothing is seeded here any more: a fresh database has no users at
+        # all until the first request mints one, because there is no "the"
+        # user to seed.
         async with db.transaction():
             await init_db(db)
-            await seed_if_empty(db, settings)
             await run_migrations(db)
 
-        users = UserRepository(db)
-        positions = PositionRepository(db)
-        trades = TradeRepository(db)
-        snapshots = SnapshotRepository(db)
-        watchlist_repo = WatchlistRepository(db)
-        chat_repo = ChatRepository(db)
+        app.state.user_store = UserStore(db, settings)
+        app.state.session_cookie = SessionCookie(settings.session_secret)
 
         price_cache: PriceCache = app.state.price_cache
         source = create_market_data_source(price_cache, settings)
-        reconciler = TickerReconciler(source, watchlist_repo, positions)
+        reconciler = TickerReconciler(source, db, settings.market_capacity)
 
         tracked = await reconciler.compute_tracked_tickers()
         await source.start(tracked)
@@ -141,58 +127,45 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await collector.start()
             stack.push_async_callback(collector.stop)
 
+        # Process-wide, not per request: they exist to order concurrent
+        # writes within one instance, which is precisely what a lock created
+        # fresh for each request could not do.
         trade_lock = asyncio.Lock()
         watchlist_lock = asyncio.Lock()
 
-        trade_service = TradeService(
-            db, users, positions, trades, snapshots, price_cache, reconciler, trade_lock
-        )
-        watchlist_service = WatchlistService(
-            db, watchlist_repo, reconciler, watchlist_lock, settings.watchlist_cap
-        )
-        chat_service = ChatService(
-            chat_repo,
-            trade_service,
-            watchlist_service,
-            create_chat_client(settings),
-            ActionExecutor(trade_service, watchlist_service),
-            settings,
-        )
-        reset_service = ResetService(
-            db,
-            settings,
-            users,
-            positions,
-            trades,
-            snapshots,
-            watchlist_repo,
-            chat_repo,
-            reconciler,
-            history_store,
-            trade_lock,
-            watchlist_lock,
-        )
-
-        # Nothing runs between requests on a serverless platform, so the periodic
-        # snapshot moves into the SSE stream — which is open exactly when someone
-        # is watching the chart it feeds.
-        snapshot_writer: SnapshotWriter | None = None
-        if settings.serverless:
-            await trade_service.write_snapshot()
-        else:
+        # Serverless gets no writer at all. Its loop would never be scheduled
+        # between requests, and `start()` is not free any more: it awaits one
+        # snapshot write per user active in the last hour, so every cold start
+        # would pay N Neon round trips before serving anything, growing with
+        # adoption. `GET /api/portfolio` calls `write_snapshot_if_stale()`
+        # there instead -- scoped to a user who is actually looking at the app.
+        if not settings.serverless:
             snapshot_writer = SnapshotWriter(
-                trade_service, settings.snapshot_interval_seconds, settings.snapshot_retention_days
+                db,
+                settings,
+                app.state.user_store,
+                price_cache,
+                settings.snapshot_interval_seconds,
+                settings.snapshot_retention_days,
             )
             await snapshot_writer.start()
             stack.push_async_callback(snapshot_writer.stop)
 
+        # Nothing runs between requests on a serverless instance, so idle
+        # guests there are expired by Vercel Cron hitting the admin route
+        # instead of this background task.
+        if not settings.serverless:
+            cleaner = GuestCleaner(app.state.user_store, settings)
+            await cleaner.start()
+            stack.push_async_callback(cleaner.stop)
+
         app.state.db = db
         app.state.source = source
         app.state.history_store = history_store
-        app.state.trade_service = trade_service
-        app.state.watchlist_service = watchlist_service
-        app.state.chat_service = chat_service
-        app.state.reset_service = reset_service
+        app.state.reconciler = reconciler
+        app.state.chat_client = create_chat_client(settings)
+        app.state.trade_lock = trade_lock
+        app.state.watchlist_lock = watchlist_lock
 
         logger.info("Startup complete: %d tickers tracked", len(tracked))
         yield
@@ -222,19 +195,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(chat_module.router)
     app.include_router(system_module.router)
 
-    async def write_snapshot_from_stream() -> None:
-        """Late-bound: the trade service does not exist until startup runs."""
-        service = getattr(app.state, "trade_service", None)
-        if service is not None:
-            await service.write_snapshot()
-
     app.include_router(
-        create_stream_router(
-            app.state.price_cache,
-            max_seconds=resolved.stream_max_seconds,
-            on_heartbeat=write_snapshot_from_stream if resolved.serverless else None,
-            heartbeat_seconds=resolved.snapshot_interval_seconds,
-        )
+        create_stream_router(app.state.price_cache, max_seconds=resolved.stream_max_seconds)
     )
 
     _register_static_routes(app)

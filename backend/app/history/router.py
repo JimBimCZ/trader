@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ..deps import HistoryStoreDep
+from ..deps import CurrentUserDep, HistoryStoreDep
 from ..errors import TickerNotFoundError
 from ..market.tickers import validate_ticker
 
@@ -12,12 +12,17 @@ router = APIRouter(prefix="/api/history", tags=["history"])
 
 
 @router.get("/{ticker}")
-async def get_history(ticker: str, store: HistoryStoreDep) -> dict:
+async def get_history(ticker: str, store: HistoryStoreDep, user: CurrentUserDep) -> dict:
     """Recent price points for a ticker, oldest first.
 
     Seeds charts on first paint. Timestamps are Unix float seconds, matching
     the SSE payload rather than the ISO strings used elsewhere.
     """
+    # The ring buffer is global -- one price series per ticker, shared by
+    # everyone -- so `user` is resolved purely for its side effects:
+    # minting a guest and setting the session cookie on a first visit
+    # that happens to land here.
+    del user
     canonical = validate_ticker(ticker)
     points = store.get(canonical)
     if points is None:

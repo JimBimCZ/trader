@@ -16,9 +16,10 @@ it is just no longer a Vercel-only concern.*
 
 ## Why the app does not fit Vercel as built
 
-`backend/app/main.py` builds a long-lived process. Its `lifespan` starts three background
+`backend/app/main.py` builds a long-lived process. Its `lifespan` starts four background
 tasks — the 500 ms GBM simulator writing into an in-memory `PriceCache`, the history ring-buffer
-collector, and the 30 s snapshot writer. SSE readers stream off the shared in-memory cache.
+collector, the 30 s snapshot writer, and the daily guest-cleanup sweep. SSE readers stream off the
+shared in-memory cache.
 
 Vercel gives none of that: invocations are stateless, there is no writable persistent disk, no
 work runs between requests, and a function has a bounded lifetime. The simulator and the snapshot
@@ -80,20 +81,33 @@ any more; it is just how the app talks to its one database.*
 - A **pooled** endpoint is required wherever the database is Neon, which means
   `statement_cache_size=0` — pgbouncer in transaction mode breaks asyncpg's prepared statements.
   The local Docker Postgres is unpooled and does not need this, but the setting is harmless there.
-- A forward-only, idempotent migration runner (`app/db/migrations.py`) now runs after `init_db` and
-  `seed_if_empty` on every startup, on every target. Migration 001 attaches every per-user table to
-  `users_profile` with `ON DELETE CASCADE`.
+- A forward-only, idempotent migration runner (`app/db/migrations.py`) now runs right after
+  `init_db` on every startup, on every target — nothing is seeded in between. `seed_if_empty` no
+  longer exists: once the app became multi-user there was no single "empty database" default row
+  left to seed at startup. Seeding is per-user now, inside the same transaction as each guest's
+  `users_profile` insert, the moment `UserStore.mint_guest()` creates it
+  (`app/identity/store.py`). Migration 001 attaches every per-user table to `users_profile` with
+  `ON DELETE CASCADE`.
 
 ### 3. Background tasks go away
+
+*Updated 2026-08-25, once the per-user-scoping phase landed: the snapshot writer no longer rides
+the SSE heartbeat described in the original version of this row — that plumbing (a snapshot tick
+inside the SSE generator) was deleted outright, because the SSE stream never resolves a caller
+(`GET /api/stream/prices` is one of the four routes that never mint a session — see
+`planning/API_CONTRACT.md` §0) and so has no single user to attribute a snapshot to any more. See
+`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
 
 | Task | Replacement |
 |---|---|
 | Simulator loop | Deleted. Prices are computed, not ticked. |
 | History collector | Deleted. History is computed backwards from now. |
-| Snapshot writer | Moves into the SSE generator: one snapshot per 30 s of stream time. Trades already write their own. |
+| Snapshot writer | Not started at all when `VERCEL` is set (`Settings.serverless`), matching the market source, the history collector and the guest cleaner — its `start()` awaits one snapshot write per recently active user, which would put N Neon round trips in front of every cold start. Instead, `GET /api/portfolio` calls `TradeService.write_snapshot_if_stale()`, which writes a snapshot for the calling user only when their newest one is already older than `snapshot_interval_seconds` (30s default). Trades still write their own snapshot inline, as they always have. This reuses exactly the read that is naturally scoped to a user who is actually looking at the app — the same principle the deleted SSE-heartbeat approach was reaching for, without needing a stream to hang it off. |
+| Guest cleanup | Deleted as a background task on this target (nothing runs between requests to drive a loop). `vercel.json` schedules a daily `GET /api/admin/cleanup` hit at `0 4 * * *` (04:00 UTC) instead. A `vercel.json` `crons` entry takes only `path` and `schedule` — there is no way to attach a custom header to it — so the route accepts Vercel's own convention as well as its native one: it reads either `X-Cleanup-Secret` (a human or a non-Vercel scheduler) or `Authorization: Bearer <secret>` (what Vercel Cron auto-attaches whenever `CRON_SECRET` is set), and checks either against the same configured secret. Set `CRON_SECRET` in the dashboard and the scheduled hit authenticates itself with no other configuration. |
 
-The snapshot writer belongs in the stream because that is precisely when a user is watching —
-which is the only time the P&L chart is read.
+The container target keeps both as real background tasks: `SnapshotWriter` ticks every 30s and
+writes one snapshot per user active in the last hour; `GuestCleaner` runs once a day in-process.
+Only the serverless target needs the per-request / Cron substitutes above.
 
 ### 4. Serving layout
 
@@ -118,6 +132,11 @@ therefore ships ~15 MB of dependencies instead of ~160 MB.
   session baseline exact.
 - **The AI chat ships mocked.** Adding `OPENROUTER_API_KEY` alone is not enough; `litellm` must
   also be added back to `requirements.txt`.
+- **Guest cleanup needs `CRON_SECRET` set to actually run.** `vercel.json`'s Cron entry hits
+  `GET /api/admin/cleanup` daily; the route accepts the `Authorization: Bearer` header Vercel Cron
+  auto-attaches when `CRON_SECRET` is set, as well as `X-Cleanup-Secret` — see §3. Leave
+  `CRON_SECRET` unset and the route (correctly) refuses every call, including the Cron one, so
+  idle guests accumulate.
 
 ## Deploying
 
@@ -126,7 +145,9 @@ The project builds from the repository root. Vercel runs the frontend build and 
 rewrite is what sends `/api/*` to it and nothing else.
 
 ```
-vercel.json        build, rewrite, function limits, non-secret env
+vercel.json        build, rewrite, function limits, non-secret env, and the daily
+                    guest-cleanup Cron entry (`0 4 * * *` → `GET /api/admin/cleanup`;
+                    set `CRON_SECRET` so it can authenticate itself, per §3)
 requirements.txt   the function's dependencies — deliberately not the backend's full set
 api/index.py       puts backend/ on the import path and exposes app.main:app
 ```
@@ -139,6 +160,10 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 | `LLM_MOCK` | `vercel.json` | `true`. The assistant answers deterministically and costs nothing. |
 | `STREAM_MAX_SECONDS` | `vercel.json` | `55`, just under the 60 s function limit, so the stream closes itself. |
 | `DATABASE_URL` | dashboard | Neon's **pooled** URI. **Required** — there is no fallback any more; absent, the function raises `ConfigurationError` on cold start instead of running on ephemeral storage. |
+| `SESSION_SECRET` | dashboard | Signs the `trader_session` cookie. Every cold start with it unset generates a fresh one, which invalidates every existing cookie and permanently orphans every guest's portfolio — the row survives in Neon, but nothing can prove which cookie pointed at it. On a platform that recycles instances constantly, leaving this unset is worse here than on a long-lived container. Set it once, in the dashboard, before real use. |
+| `GUEST_TTL_DAYS` | dashboard (optional) | Days of inactivity before a guest is deleted (default 7). Read by the Cron-driven cleanup route, same as on the container target. |
+| `CRON_SECRET` | dashboard | Vercel's own convention: setting this auto-attaches `Authorization: Bearer $CRON_SECRET` to every Cron invocation, which the cleanup route accepts directly. **This is the one to set on this target** — it needs no other configuration for the scheduled hit in `vercel.json` to authenticate. |
+| `CLEANUP_SECRET` | dashboard (optional) | Guards the same route via `X-Cleanup-Secret` instead, for a manual/curl call. Falls back to `CRON_SECRET` when unset (`app/config.py`), so setting `CRON_SECRET` alone is sufficient on Vercel — this variable is only needed to give a human caller a different secret than the Cron one. |
 
 ### Finishing the setup
 
@@ -150,13 +175,18 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 2. **Add the real assistant**, if wanted. Put `litellm` in `requirements.txt` and
    `OPENROUTER_API_KEY` in the dashboard, and drop `LLM_MOCK` from `vercel.json`. It adds ~130 MB to
    the bundle and a real cost per message, on an app that has no authentication.
+3. **Set `SESSION_SECRET` and `CRON_SECRET`.** Without the first, every cold start orphans every
+   existing guest; without the second, the daily guest-cleanup Cron hit is rejected and idle guests
+   are never expired. Both are ordinary dashboard environment variables — no other configuration
+   is needed for either to take effect.
 
 ### Access and cost
 
 The production domain is public: Vercel Authentication cannot cover it on the Hobby plan, which
 refuses `ssoProtection` for production outright. Preview deployments and production *deployment*
 URLs are gated by it; the production domain is not, and password protection is paid too. The app
-has no authentication of its own, so anyone with the URL can trade the imaginary money.
+has no sign-in of its own, so anyone with the URL is minted their own anonymous guest and can trade
+that guest's imaginary money — isolated from every other guest's, but not gated behind anything.
 
 The cost that matters is the price stream. An open tab holds an SSE connection, and streaming is
 billed for its whole duration — `STREAM_MAX_SECONDS` closes it at 55 s but `EventSource`

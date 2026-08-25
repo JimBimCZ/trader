@@ -5,14 +5,14 @@ from __future__ import annotations
 import uuid
 
 from ..clock import utcnow_iso
-from ..db import DEFAULT_USER_ID, Database
+from ..db import Database
 from .models import EPSILON, PortfolioSnapshot, Position, Side, Trade
 
 
 class UserRepository:
     """The single user profile row: cash balance."""
 
-    def __init__(self, db: Database, user_id: str = DEFAULT_USER_ID) -> None:
+    def __init__(self, db: Database, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
 
@@ -31,7 +31,7 @@ class UserRepository:
 class PositionRepository:
     """Open holdings. A projection of the trades log, maintained on write."""
 
-    def __init__(self, db: Database, user_id: str = DEFAULT_USER_ID) -> None:
+    def __init__(self, db: Database, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
 
@@ -88,7 +88,7 @@ class PositionRepository:
 class TradeRepository:
     """Append-only trade log. Authoritative; positions and cash derive from it."""
 
-    def __init__(self, db: Database, user_id: str = DEFAULT_USER_ID) -> None:
+    def __init__(self, db: Database, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
 
@@ -147,7 +147,7 @@ class TradeRepository:
 class SnapshotRepository:
     """Portfolio value over time, for the P&L chart."""
 
-    def __init__(self, db: Database, user_id: str = DEFAULT_USER_ID) -> None:
+    def __init__(self, db: Database, user_id: str) -> None:
         self._db = db
         self._user_id = user_id
 
@@ -181,6 +181,14 @@ class SnapshotRepository:
             "SELECT COUNT(*) AS n FROM portfolio_snapshots WHERE user_id = ?", (self._user_id,)
         )
         return int(row["n"]) if row else 0
+
+    async def newest_recorded_at(self) -> str | None:
+        row = await self._db.fetch_one(
+            "SELECT recorded_at FROM portfolio_snapshots WHERE user_id = ? "
+            "ORDER BY recorded_at DESC, seq DESC LIMIT 1",
+            (self._user_id,),
+        )
+        return row["recorded_at"] if row is not None else None
 
     async def prune_older_than(self, cutoff_iso: str) -> int:
         """Delete snapshots older than the cutoff. Returns rows removed."""

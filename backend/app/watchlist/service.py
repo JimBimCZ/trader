@@ -51,9 +51,14 @@ class WatchlistService:
                 raise WatchlistFullError(
                     f"Watchlist is limited to {self._cap} tickers. Remove one first."
                 )
+            # Must precede the transaction: a global-capacity failure here must
+            # raise before anything is persisted, or the watchlist row commits
+            # for a ticker the market source never tracks -- permanently,
+            # since a retry short-circuits on contains() above. Matches
+            # PortfolioService.execute_trade's ordering.
+            await self._reconciler.ensure_tracked(ticker)
             async with self._db.transaction():
                 await self._repo.add(ticker)
-            await self._reconciler.ensure_tracked(ticker)
             return await self._repo.list()
 
     async def remove(self, raw_ticker: str) -> list[str]:

@@ -13,6 +13,7 @@ from app.errors import (
     InvalidTickerError,
     PriceUnavailableError,
 )
+from tests.conftest import TEST_USER_ID
 
 
 class TestBuy:
@@ -229,3 +230,59 @@ class TestConcurrency:
         successes = [r for r in results if not isinstance(r, Exception)]
         assert len(successes) == 1
         assert await services.positions.get("AAPL") is None
+
+
+class TestWriteSnapshotIfStale:
+    """The serverless path: this replaces the SSE heartbeat on the read that
+    is naturally scoped to a user actually looking at the app."""
+
+    async def test_writes_when_there_is_no_snapshot_yet(self, services):
+        # A seeded user already owns the t=0 point, so clearing it is what
+        # actually produces the "nothing recorded yet" case being tested.
+        await services.snapshots.delete_all()
+        assert await services.snapshots.newest_recorded_at() is None
+        assert await services.trade_service.write_snapshot_if_stale() is True
+        assert await services.snapshots.newest_recorded_at() is not None
+
+    async def test_skips_when_the_newest_snapshot_is_recent(self, services):
+        await services.trade_service.write_snapshot()
+        before = await services.trade_service.get_history()
+
+        assert await services.trade_service.write_snapshot_if_stale() is False
+
+        assert await services.trade_service.get_history() == before
+
+    async def test_writes_when_the_newest_snapshot_is_older_than_the_interval(self, services):
+        await services.trade_service.write_snapshot()
+        await services.db.execute(
+            "UPDATE portfolio_snapshots SET recorded_at = '2020-01-01T00:00:00Z'"
+        )
+        before = len(await services.trade_service.get_history())
+
+        assert await services.trade_service.write_snapshot_if_stale() is True
+
+        assert len(await services.trade_service.get_history()) == before + 1
+
+
+class TestBuildTradeService:
+    async def test_builds_a_service_scoped_to_the_given_user(
+        self, seeded_db, settings, price_cache
+    ):
+        from app.identity.store import UserStore
+        from app.portfolio.service import build_trade_service
+
+        store = UserStore(seeded_db, settings)
+        user = await store.mint_guest()
+        service = build_trade_service(seeded_db, settings, price_cache, user.id)
+
+        # One point already: minting seeds the t=0 snapshot.
+        assert len(await service.get_history()) == 1
+        await service.write_snapshot()
+        assert len(await service.get_history()) == 2
+
+        # Nothing leaks onto anybody else's snapshot history. Checked against
+        # a user who demonstrably has rows -- their own t=0 point, and only
+        # that -- because an empty result for a user who does not exist would
+        # be empty however badly the scoping were broken.
+        neighbour = build_trade_service(seeded_db, settings, price_cache, TEST_USER_ID)
+        assert len(await neighbour.get_history()) == 1

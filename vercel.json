@@ -14,5 +14,6 @@
   "env": {
     "LLM_MOCK": "true",
     "STREAM_MAX_SECONDS": "55"
-  }
+  },
+  "crons": [{ "path": "/api/admin/cleanup", "schedule": "0 4 * * *" }]
 }
