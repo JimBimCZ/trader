@@ -1,6 +1,6 @@
 # Backend — Component Summary
 
-Status: **complete**. 492 tests, ruff clean. Runs on Postgres only — SQLite was removed
+Status: **complete**. Ruff clean. Runs on Postgres only — SQLite was removed
 2026-08-24; see `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`. The app is
 now multi-user (anonymous guests, no sign-in yet) — see `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` and the "Per-request services" section below.
 

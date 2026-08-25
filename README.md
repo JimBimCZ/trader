@@ -103,7 +103,7 @@ Docker container (port 8000)                 ──►  Postgres 16
 # Backend
 cd backend
 uv sync --extra dev
-uv run --extra dev pytest                  # 492 tests, needs Postgres (TEST_DATABASE_URL, defaults to the compose service)
+uv run --extra dev pytest                  # needs Postgres (TEST_DATABASE_URL, defaults to the compose service)
 uv run --extra dev ruff check app/ tests/
 uv run uvicorn app.main:app --reload
 

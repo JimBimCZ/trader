@@ -16,9 +16,10 @@ it is just no longer a Vercel-only concern.*
 
 ## Why the app does not fit Vercel as built
 
-`backend/app/main.py` builds a long-lived process. Its `lifespan` starts three background
+`backend/app/main.py` builds a long-lived process. Its `lifespan` starts four background
 tasks — the 500 ms GBM simulator writing into an in-memory `PriceCache`, the history ring-buffer
-collector, and the 30 s snapshot writer. SSE readers stream off the shared in-memory cache.
+collector, the 30 s snapshot writer, and the daily guest-cleanup sweep. SSE readers stream off the
+shared in-memory cache.
 
 Vercel gives none of that: invocations are stateless, there is no writable persistent disk, no
 work runs between requests, and a function has a bounded lifetime. The simulator and the snapshot
@@ -80,9 +81,13 @@ any more; it is just how the app talks to its one database.*
 - A **pooled** endpoint is required wherever the database is Neon, which means
   `statement_cache_size=0` — pgbouncer in transaction mode breaks asyncpg's prepared statements.
   The local Docker Postgres is unpooled and does not need this, but the setting is harmless there.
-- A forward-only, idempotent migration runner (`app/db/migrations.py`) now runs after `init_db` and
-  `seed_if_empty` on every startup, on every target. Migration 001 attaches every per-user table to
-  `users_profile` with `ON DELETE CASCADE`.
+- A forward-only, idempotent migration runner (`app/db/migrations.py`) now runs right after
+  `init_db` on every startup, on every target — nothing is seeded in between. `seed_if_empty` no
+  longer exists: once the app became multi-user there was no single "empty database" default row
+  left to seed at startup. Seeding is per-user now, inside the same transaction as each guest's
+  `users_profile` insert, the moment `UserStore.mint_guest()` creates it
+  (`app/identity/store.py`). Migration 001 attaches every per-user table to `users_profile` with
+  `ON DELETE CASCADE`.
 
 ### 3. Background tasks go away
 

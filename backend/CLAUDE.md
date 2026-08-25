@@ -12,7 +12,7 @@ uv sync --extra dev
 ## Commands
 
 ```bash
-uv run --extra dev pytest                      # 492 tests, needs Postgres (see Testing below)
+uv run --extra dev pytest                      # needs Postgres (see Testing below)
 uv run --extra dev pytest --cov=app            # with coverage
 uv run --extra dev pytest tests/portfolio -v   # one area
 uv run --extra dev ruff check app/ tests/      # lint
