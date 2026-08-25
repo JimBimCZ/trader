@@ -67,6 +67,17 @@ def _import_time_nodes(node: ast.AST) -> Iterator[ast.AST]:
         yield from _import_time_nodes(child)
 
 
+def _enqueue(queue: list[str], dotted: str) -> None:
+    """Queue an internal module and every package above it.
+
+    `from .db.postgres import normalize_dsn` names one module, but importing it
+    executes `app/__init__.py` and `app/db/__init__.py` first. Queueing only
+    what the import statement spells would leave those unparsed.
+    """
+    parts = dotted.split(".")
+    queue.extend(".".join(parts[: i + 1]) for i in range(len(parts)))
+
+
 def _walk() -> tuple[set[str], set[str]]:
     """Follow import-time imports from the entrypoint.
 
@@ -75,7 +86,8 @@ def _walk() -> tuple[set[str], set[str]]:
     """
     third_party: set[str] = set()
     visited: set[str] = set()
-    queue = [ENTRYPOINT]
+    queue: list[str] = []
+    _enqueue(queue, ENTRYPOINT)
 
     while queue:
         dotted = queue.pop()
@@ -92,7 +104,7 @@ def _walk() -> tuple[set[str], set[str]]:
                 for alias in node.names:
                     top = alias.name.split(".")[0]
                     if top == "app":
-                        queue.append(alias.name)
+                        _enqueue(queue, alias.name)
                     elif top not in sys.stdlib_module_names:
                         third_party.add(top)
             elif isinstance(node, ast.ImportFrom):
@@ -111,8 +123,9 @@ def _walk() -> tuple[set[str], set[str]]:
                 # A name imported from a package may be a submodule rather than
                 # an attribute -- `from .history import router` is how main.py
                 # reaches history/router.py -- so both are followed.
-                queue.append(target)
-                queue.extend(f"{target}.{alias.name}" for alias in node.names)
+                _enqueue(queue, target)
+                for alias in node.names:
+                    queue.append(f"{target}.{alias.name}")
 
     return third_party, visited
 
@@ -158,6 +171,16 @@ def test_the_walk_reaches_the_cookie_signer(walked):
     third_party, visited = walked
     assert "app.identity.cookie" in visited
     assert "itsdangerous" in third_party
+
+
+def test_the_walk_parses_every_package_along_the_way(walked):
+    """Importing `app.main` executes `app/__init__.py` first, and every
+    intermediate `__init__.py` after it. A module-scope third-party import in
+    one of those takes the function down exactly as cookie.py did, so a walk
+    that reaches a module without reaching its package has a blind spot."""
+    _, visited = walked
+    ancestors = {module.rpartition(".")[0] for module in visited if "." in module}
+    assert ancestors <= visited, f"packages reached but never parsed: {sorted(ancestors - visited)}"
 
 
 @pytest.mark.parametrize("module", ["numpy", "massive", "litellm"])
