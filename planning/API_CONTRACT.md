@@ -60,9 +60,11 @@ browser nothing about it, so the retry created another.
 `GET /{path}` that serves the static frontend. The first two are read-only against shared,
 non-user-scoped state (process health; the shared price cache); the cleanup route is authorized by
 a shared secret rather than by a user and deletes rows on a scheduler's behalf; the catch-all
-serves files. None of them needs — or creates — a user. (Six more routes never *mint* a guest
-either, but do read or write the cookie directly rather than never touching it at all — see §0.1's
-opening paragraph for that distinction.)
+serves files (a path that is a directory is served from the `index.html` inside it, which is how
+an exported route such as `/privacy/` resolves — see PLAN.md §11). None of them needs — or
+creates — a user. (Six more routes never *mint* a guest either, but do read or write the cookie
+directly rather than never touching it at all — see §0.1's opening paragraph for that
+distinction.)
 
 ---
 
