@@ -88,7 +88,13 @@ export default function Page() {
             <WatchlistPanel />
           </div>
 
-          <div className="grid min-w-0 grid-cols-1 gap-3 lg:min-h-0 lg:grid-rows-[minmax(0,1.2fr)_auto_minmax(0,0.8fr)_minmax(0,0.9fr)]">
+          {/* The trade ticket's row is `auto`, so it is subtracted before the
+              fractions are shared out — the three chart rows get whatever is
+              left of a laptop-height viewport. The heatmap/performance row
+              carries two charts and needs the largest share after the main
+              chart; at 0.8fr it resolved to 120px, which is less than
+              Recharts' own axes occupy. */}
+          <div className="grid min-w-0 grid-cols-1 gap-3 lg:min-h-0 lg:grid-rows-[minmax(0,1.15fr)_auto_minmax(0,1.05fr)_minmax(0,0.8fr)]">
             <MainChart ticker={selectedTicker} />
             <TradeBar />
             <div className="grid min-w-0 grid-cols-1 gap-3 lg:min-h-0 xl:grid-cols-2">

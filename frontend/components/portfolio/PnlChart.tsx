@@ -25,6 +25,24 @@ function axisFormatter(range: number) {
 }
 
 /**
+ * Recharts reserves the Y axis band before it draws and clips whatever does
+ * not fit, so the band has to be sized for the longest label it will actually
+ * render. A constant cannot do that: under the `formatPrice` branch above,
+ * `$998.00` and `$250,002.00` differ by 22px, and the card is only ~275px
+ * wide — a band wide enough for the second wastes a tenth of the plot on the
+ * first.
+ *
+ * The glyphs are tabular (stated once on `body`), so at `fontSize: 10` they
+ * measure ~5.7px each; the +8 is the gap to the plot. Clamped at both ends so
+ * an outlandish value cannot eat the chart.
+ */
+export function axisWidth(values: number[], range: number): number {
+  const format = axisFormatter(range);
+  const longest = values.reduce((widest, value) => Math.max(widest, format(value).length), 0);
+  return Math.min(76, Math.max(44, Math.ceil(longest * 5.7) + 8));
+}
+
+/**
  * Total portfolio value over time. Snapshots arrive every 30 seconds, so this
  * is declarative SVG rather than canvas.
  */
@@ -91,7 +109,7 @@ export function PnlChart() {
                 tick={{ fill: colors.textMuted, fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
-                width={72}
+                width={axisWidth(values, range)}
                 tickFormatter={axisFormatter(range)}
               />
               <Tooltip
