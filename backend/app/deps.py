@@ -76,7 +76,7 @@ async def get_current_user(request: Request, response: Response) -> User:
     else:
         await store.touch(user)
 
-    _set_session_cookie(request, response, cookie, user.id)
+    set_session_cookie(request, response, cookie, user.id)
     return user
 
 
@@ -100,7 +100,7 @@ def _request_is_https(request: Request) -> bool:
     return scheme.lower() == "https"
 
 
-def _set_session_cookie(
+def set_session_cookie(
     request: Request, response: Response, cookie: SessionCookie, user_id: str
 ) -> None:
     """Attach the session cookie.
@@ -128,6 +128,22 @@ def _set_session_cookie(
     # cookie-less first request minted a guest -- twelve rows -- and handed the
     # browser no session to come back with. The next request minted another.
     setattr(request.state, PENDING_SESSION_COOKIE_ATTR, response.headers.get("set-cookie"))
+
+
+def clear_session_cookie(response: Response) -> None:
+    """Drop the session. The next request mints a fresh guest.
+
+    The attributes must match the ones the cookie was written with -- a
+    browser matches a deletion on name, path and domain, and a `delete_cookie`
+    that disagrees on path leaves the original in place while looking like it
+    worked.
+
+    There is no server-side revocation to pair this with: the cookie is
+    stateless by design, so a copy captured earlier stays valid until it
+    expires. Accepted in the spec's session contract, and the reason
+    "sign out everywhere" is not offered.
+    """
+    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="lax")
 
 
 CurrentUserDep = Annotated["User", Depends(get_current_user)]
