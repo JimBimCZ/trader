@@ -18,10 +18,11 @@ Conventions:
 
 ## 0. Identity — the `trader_session` cookie
 
-There is no sign-in yet. Every request that reaches a route other than the ones named below resolves
-a caller from a signed cookie, minting a fresh guest the first time a browser arrives without one
-(or with one that no longer verifies — see below). Nothing about this is visible in a request or
-response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
+*Corrected 2026-08-25.* Sign-in exists and is optional — see §0.1. What follows describes what
+happens to every request regardless of whether the caller ever signs in: a route other than the
+ones named below resolves a caller from a signed cookie, minting a fresh guest the first time a
+browser arrives without one (or with one that no longer verifies — see below). Nothing about this
+is visible in a request or response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
 
 | Attribute | Value |
 |---|---|
@@ -59,7 +60,9 @@ browser nothing about it, so the retry created another.
 `GET /{path}` that serves the static frontend. The first two are read-only against shared,
 non-user-scoped state (process health; the shared price cache); the cleanup route is authorized by
 a shared secret rather than by a user and deletes rows on a scheduler's behalf; the catch-all
-serves files. None of them needs — or creates — a user.
+serves files. None of them needs — or creates — a user. (Six more routes never *mint* a guest
+either, but do read or write the cookie directly rather than never touching it at all — see §0.1's
+opening paragraph for that distinction.)
 
 ---
 
@@ -176,9 +179,11 @@ E2E only. Signs a session cookie for `user_id` with no provider involved at all 
 session forgery, by design: anyone who can reach it becomes any user by guessing an id. Answers
 `AUTH_PROVIDER_UNAVAILABLE` (404), not 403, when `AUTH_MOCK` is unset (the default and what every
 non-test deployment should run with), so a deployment that has it switched off does not even
-reveal that the route exists. On success: `307` to `/` with the cookie set. `AUTH_MOCK=true` is
-what `test/docker-compose.test.yml` sets for the E2E suite; it is never set in `docker-compose.yml`
-or on Vercel.
+reveal that the route exists. **The same code and status also answer a `user_id` that does not
+exist** ("No such user.") when `AUTH_MOCK=true` — the two 404s are indistinguishable on the wire,
+so a bad id and a switched-off route look identical to a caller debugging one. On success: `307`
+to `/` with the cookie set. `AUTH_MOCK=true` is what `test/docker-compose.test.yml` sets for the
+E2E suite; it is never set in `docker-compose.yml` or on Vercel.
 
 ---
 
