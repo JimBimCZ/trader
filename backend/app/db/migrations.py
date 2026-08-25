@@ -80,10 +80,12 @@ MIGRATIONS: list[str] = [
     CREATE TABLE IF NOT EXISTS oauth_identities (
         provider         TEXT NOT NULL,
         provider_user_id TEXT NOT NULL,
-        user_id          TEXT NOT NULL REFERENCES users_profile (id) ON DELETE CASCADE,
+        user_id          TEXT NOT NULL,
         email            TEXT,
         created_at       TEXT NOT NULL,
-        PRIMARY KEY (provider, provider_user_id)
+        PRIMARY KEY (provider, provider_user_id),
+        CONSTRAINT fk_oauth_identities_user
+            FOREIGN KEY (user_id) REFERENCES users_profile (id) ON DELETE CASCADE
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities (user_id)",

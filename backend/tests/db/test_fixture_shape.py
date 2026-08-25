@@ -15,6 +15,7 @@ EXPECTED_FKS = {
     "fk_trades_user",
     "fk_portfolio_snapshots_user",
     "fk_chat_messages_user",
+    "fk_oauth_identities_user",
 }
 
 
