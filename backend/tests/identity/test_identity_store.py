@@ -93,3 +93,22 @@ class TestHasActivity:
             (guest.id,),
         )
         assert await store.has_activity(guest.id) is True
+
+    async def test_swapping_a_seeded_ticker_for_another_is_activity(self, store, db):
+        """Isolates the membership half of the check. Removing one seeded
+        ticker and adding one unseeded ticker leaves the *count* at ten --
+        `test_removing_a_seeded_ticker_is_activity` trips the count check by
+        itself (nine rows), and `test_adding_a_ticker_is_activity` trips both
+        at once (eleven rows, and the new ticker is unseeded), so neither
+        isolates membership the way this does. Without the membership
+        subquery this is indistinguishable from an untouched guest -- a
+        curated watchlist shaped exactly like this would get no confirmation
+        prompt and silently lose its edits on a claim."""
+        guest = await store.mint_guest()
+        await db.execute("DELETE FROM watchlist WHERE user_id = ? AND ticker = 'NFLX'", (guest.id,))
+        await db.execute(
+            "INSERT INTO watchlist (id, user_id, ticker, added_at) "
+            "VALUES ('w1', ?, 'PYPL', '2026-01-01T00:00:00Z')",
+            (guest.id,),
+        )
+        assert await store.has_activity(guest.id) is True
