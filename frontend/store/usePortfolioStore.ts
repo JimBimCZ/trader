@@ -65,19 +65,30 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
 
   trade: async (ticker, side, quantity) => {
     set({ tradePending: true, tradeError: null });
+
+    // Placing the order is the only step that can fail the trade.
     try {
       await executeTrade(ticker, side, quantity);
-      await get().refresh();
-      await get().refreshHistory();
-      return true;
     } catch (error) {
       const message =
         error instanceof ApiError ? error.message : "The trade could not be completed.";
-      set({ tradeError: message });
+      set({ tradeError: message, tradePending: false });
       return false;
-    } finally {
-      set({ tradePending: false });
     }
+
+    // From here the order has filled: the server has already moved the cash
+    // and the position. The two calls below only re-read that result, so
+    // their failure is a stale screen, not an undone trade -- and reporting
+    // it as a rejected order would be a lie about money that has already
+    // moved, inviting the user to place the same order twice.
+    //
+    // `allSettled` so a failed portfolio read still lets the history be
+    // fetched, and so neither rejection escapes: each call has already
+    // recorded its own outcome on the store, which is what the panels render
+    // -- with their own Retry.
+    await Promise.allSettled([get().refresh(), get().refreshHistory()]);
+    set({ tradePending: false });
+    return true;
   },
 
   clearTradeError: () => set({ tradeError: null }),
