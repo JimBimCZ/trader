@@ -45,10 +45,18 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   },
 
   claim: async (token: string) => {
-    // No try/catch: a refused claim leaves the cookie exactly where it was,
-    // so nothing downstream is stale and the caller renders the error.
+    // No try/catch around confirmClaim: a refused claim leaves the cookie
+    // exactly where it was, so nothing downstream is stale and the caller
+    // renders the error.
     await confirmClaim(token);
-    await get().load();
+
+    // confirmClaim resolving IS the moment the cookie moved to the target
+    // account -- that fact does not depend on the reload below succeeding.
+    // Bumping here (rather than after `load()`) means a reload that fails on
+    // a network blip still leaves every other store correctly informed that
+    // the identity changed, instead of stranding the caller with a token
+    // that a moved cookie has already made unusable to retry.
     set((state) => ({ sessionVersion: state.sessionVersion + 1 }));
+    await get().load();
   },
 }));

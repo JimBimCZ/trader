@@ -86,4 +86,20 @@ describe("sessionVersion", () => {
 
     expect(useSessionStore.getState().sessionVersion).toBe(before);
   });
+
+  it("bumps even when the post-claim reload fails", async () => {
+    // confirmClaim resolving is the moment the cookie actually moved to the
+    // target account -- a network blip on the reload that follows is a
+    // separate, later failure and must not make the caller re-send a token
+    // that a moved cookie has already made invalid.
+    vi.mocked(endpoints.confirmClaim).mockResolvedValue(undefined);
+    vi.mocked(endpoints.fetchSession).mockRejectedValue(new Error("network blip"));
+
+    const before = useSessionStore.getState().sessionVersion;
+    await act(async () => {
+      await expect(useSessionStore.getState().claim("tok")).rejects.toThrow();
+    });
+
+    expect(useSessionStore.getState().sessionVersion).toBe(before + 1);
+  });
 });
