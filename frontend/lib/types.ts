@@ -96,3 +96,18 @@ export interface ChatReply {
 }
 
 export type ConnectionStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+export interface Session {
+  id: string;
+  kind: "guest" | "user";
+  email: string | null;
+  name: string | null;
+  avatar: string | null;
+  /** Whether signing in would discard anything. Drives the guest hint copy. */
+  hasActivity: boolean;
+}
+
+export interface AuthProvider {
+  name: string;
+  label: string;
+}
