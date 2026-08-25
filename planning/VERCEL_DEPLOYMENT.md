@@ -86,14 +86,23 @@ any more; it is just how the app talks to its one database.*
 
 ### 3. Background tasks go away
 
+*Updated 2026-08-25, once the per-user-scoping phase landed: the snapshot writer no longer rides
+the SSE heartbeat described in the original version of this row — that plumbing (a snapshot tick
+inside the SSE generator) was deleted outright, because the SSE stream never resolves a caller
+(`GET /api/stream/prices` is one of the two routes that never mints a session — see
+`planning/API_CONTRACT.md` §0) and so has no single user to attribute a snapshot to any more. See
+`docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
+
 | Task | Replacement |
 |---|---|
 | Simulator loop | Deleted. Prices are computed, not ticked. |
 | History collector | Deleted. History is computed backwards from now. |
-| Snapshot writer | Moves into the SSE generator: one snapshot per 30 s of stream time. Trades already write their own. |
+| Snapshot writer | `GET /api/portfolio` calls `TradeService.write_snapshot_if_stale()`, which writes a snapshot for the calling user only when their newest one is already older than `snapshot_interval_seconds` (30s default). Trades still write their own snapshot inline, as they always have. This reuses exactly the read that is naturally scoped to a user who is actually looking at the app — the same principle the deleted SSE-heartbeat approach was reaching for, without needing a stream to hang it off. |
+| Guest cleanup | Deleted as a background task on this target (nothing runs between requests to drive a loop). `vercel.json` schedules a daily `GET /api/admin/cleanup` hit at `0 4 * * *` (04:00 UTC) instead. **This does not yet work end-to-end**: the route requires an `X-Cleanup-Secret` header (`planning/API_CONTRACT.md` §8), but a `vercel.json` `crons` entry takes only `path` and `schedule` — there is no way to attach a custom header to it. Vercel's own convention for a secured cron target is a `CRON_SECRET` env var it auto-injects as `Authorization: Bearer <CRON_SECRET>` (confirmed against Vercel's current docs), which is *not* what this route checks. So, as configured, the daily Cron hit arrives with no `X-Cleanup-Secret` and is rejected with `CLEANUP_FORBIDDEN` exactly like any other unauthenticated call — idle guests are not actually expired on this target yet. `CLEANUP_SECRET` today only makes the route reachable by a manual/curl call that sets the header by hand. Closing this gap (switching the check to `CRON_SECRET`/`Authorization`, or fronting the Cron hit some other way) is unresolved. |
 
-The snapshot writer belongs in the stream because that is precisely when a user is watching —
-which is the only time the P&L chart is read.
+The container target keeps both as real background tasks: `SnapshotWriter` ticks every 30s and
+writes one snapshot per user active in the last hour; `GuestCleaner` runs once a day in-process.
+Only the serverless target needs the per-request / Cron substitutes above.
 
 ### 4. Serving layout
 
@@ -118,6 +127,9 @@ therefore ships ~15 MB of dependencies instead of ~160 MB.
   session baseline exact.
 - **The AI chat ships mocked.** Adding `OPENROUTER_API_KEY` alone is not enough; `litellm` must
   also be added back to `requirements.txt`.
+- **Idle guests are not actually expired on this target yet.** `vercel.json`'s Cron entry hits
+  `GET /api/admin/cleanup` daily, but the route requires an `X-Cleanup-Secret` header and a
+  `crons` entry has no way to attach one — see §3. Unresolved.
 
 ## Deploying
 
@@ -126,7 +138,9 @@ The project builds from the repository root. Vercel runs the frontend build and 
 rewrite is what sends `/api/*` to it and nothing else.
 
 ```
-vercel.json        build, rewrite, function limits, non-secret env
+vercel.json        build, rewrite, function limits, non-secret env, and the daily
+                    guest-cleanup Cron entry (`0 4 * * *` → `GET /api/admin/cleanup`,
+                    though see §3's note: it cannot yet authenticate itself)
 requirements.txt   the function's dependencies — deliberately not the backend's full set
 api/index.py       puts backend/ on the import path and exposes app.main:app
 ```
@@ -139,6 +153,9 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 | `LLM_MOCK` | `vercel.json` | `true`. The assistant answers deterministically and costs nothing. |
 | `STREAM_MAX_SECONDS` | `vercel.json` | `55`, just under the 60 s function limit, so the stream closes itself. |
 | `DATABASE_URL` | dashboard | Neon's **pooled** URI. **Required** — there is no fallback any more; absent, the function raises `ConfigurationError` on cold start instead of running on ephemeral storage. |
+| `SESSION_SECRET` | dashboard | Signs the `trader_session` cookie. Every cold start with it unset generates a fresh one, which invalidates every existing cookie and permanently orphans every guest's portfolio — the row survives in Neon, but nothing can prove which cookie pointed at it. On a platform that recycles instances constantly, leaving this unset is worse here than on a long-lived container. Set it once, in the dashboard, before real use. |
+| `GUEST_TTL_DAYS` | dashboard (optional) | Days of inactivity before a guest is deleted (default 7). Read by the Cron-driven cleanup route, same as on the container target. |
+| `CLEANUP_SECRET` | dashboard | Guards `GET`/`POST /api/admin/cleanup` (`X-Cleanup-Secret` header). Set or not, **the scheduled Cron hit itself cannot supply this header today** — see the Guest cleanup row above — so on this target it currently only enables a manual/curl call, not the automated one `vercel.json` schedules. |
 
 ### Finishing the setup
 
@@ -156,7 +173,8 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 The production domain is public: Vercel Authentication cannot cover it on the Hobby plan, which
 refuses `ssoProtection` for production outright. Preview deployments and production *deployment*
 URLs are gated by it; the production domain is not, and password protection is paid too. The app
-has no authentication of its own, so anyone with the URL can trade the imaginary money.
+has no sign-in of its own, so anyone with the URL is minted their own anonymous guest and can trade
+that guest's imaginary money — isolated from every other guest's, but not gated behind anything.
 
 The cost that matters is the price stream. An open tab holds an SSE connection, and streaming is
 billed for its whole duration — `STREAM_MAX_SECONDS` closes it at 55 s but `EventSource`

@@ -28,6 +28,11 @@ wrong until the code changes.
 **D-01 — The price source tracks `union(watchlist tickers, tickers with a non-zero position)`.**
 (§13 #5) One reconciliation helper owns this set. It is recomputed on startup and after every
 watchlist or position mutation.
+*Superseded 2026-08-25: this was written when the union was implicitly over "the" single default
+user. The per-user-scoping phase made the union explicitly global — `union` now ranges over every
+user's watchlist and every user's positions, not just the caller making the current request,
+because the set feeds one shared price cache that every SSE connection reads identically. See
+`app/reconcile.py` and `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
 
 **D-02 — Removing a watched ticker you still hold is allowed, and does not stop its price feed.**
 (§13 #6) The delete removes the watchlist row only. Because of D-01 the ticker stays in the price
@@ -45,6 +50,10 @@ would tank the P&L chart and the heatmap with no visible cause.
 (§13 #7) Rejecting the trade is the more defensible API, but this is a demo where the LLM names
 tickers conversationally; auto-add is the behavior a user expects. The trade then blocks until a
 price is cached (see D-19).
+*Noted 2026-08-25: since D-08's supersession added a global tracking cap, this auto-add can now
+also fail with `MARKET_CAPACITY_FULL` (503) if the deployment-wide tracked set is already full —
+a new outcome this decision didn't originally anticipate, alongside the existing
+`PRICE_UNAVAILABLE` block.*
 
 **D-06 — Ticker canonicalization is `ticker.strip().upper()`, applied in one shared helper.**
 (§13 #10, REVIEW B.2.3) The helper is used by the REST routes, the LLM action executor, the seed
@@ -60,6 +69,13 @@ with `PRICE_UNAVAILABLE`.
 
 **D-08 — Watchlist cap: 25 tickers.** (§13 #9) Exceeding it returns `WATCHLIST_FULL`. This keeps
 Massive's grouped snapshot call within free-tier limits and bounds the SSE payload size.
+*Superseded 2026-08-25: this cap was written when one watchlist meant one bound on total polled
+tickers. Now that every user gets an independent 25-ticker cap, 25-per-user no longer bounds the
+deployment's total polling cost — many users can each fill their own list. A second, separate,
+global cap was added for that: `market_capacity` (default 100, `app/config.py`), enforced by
+`TickerReconciler.ensure_tracked` and reported as `MARKET_CAPACITY_FULL` (503) — distinct from
+`WATCHLIST_FULL` (400), which still means only "this caller's own list is full." See
+`planning/API_CONTRACT.md` §1.*
 
 **D-09 — `session_open` is added to the price payload.**
 (§13 #11, REVIEW A.4) Without it "daily change %" has no source: `previous_price` is the previous
@@ -121,6 +137,12 @@ old is acceptable for a simulated portfolio. No staleness rejection.
 **D-21 — `portfolio_snapshots`: one row at DB init, one every 30s, one after each trade. Retention
 capped at 7 days, pruned by the same background task.** (§13 #22) Avoids an empty P&L chart for the
 first 30 seconds and unbounded growth.
+*Superseded 2026-08-25: "one row at DB init" assumed a single default user seeded once at startup.
+With many users minted on demand, the t=0 row moved to `seed_user()` (`app/db/seed.py`) — it is
+written per user, idempotently, the moment that user's profile is created (guest mint) or restored
+(reset), not at process startup. The 30s tick and the per-trade write are unchanged in kind, but
+both now iterate every user active in the last hour rather than assuming one. On the serverless
+target the 30s tick is replaced by a per-request check; see `planning/VERCEL_DEPLOYMENT.md` §3.*
 
 **D-22 — `GET /api/portfolio/history?limit=N` with `limit` defaulting to 500 and capped at 5000.**
 (§13 #14) Newest-last ordering for direct charting.
@@ -203,6 +225,13 @@ start snapshot task -> serve.
 *Updated 2026-08-24: the order gained a step. It is now `init_db` -> `seed_if_empty` ->
 `run_migrations`, then the union ticker set, market source, snapshot task, and serve, as before.
 The "eager, not lazy" decision itself still stands.*
+*Superseded 2026-08-25: `seed_if_empty` is deleted. Once the app is multi-user there is no single
+"empty database" default row to seed at startup — a fresh database now starts with zero users, and
+each guest is seeded individually, in the same transaction as its `users_profile` insert, the
+moment `UserStore.mint_guest()` creates it. Startup order is `init_db` -> `run_migrations`, then
+the (still eager, still pre-request) global tracked-ticker union, market source, snapshot task, and
+serve. The "eager, not lazy" decision still stands; only the seeding step is gone. See
+`app/main.py`'s lifespan and `app/identity/store.py`.*
 
 **D-37 — The backend reads environment variables only. `python-dotenv` loads `.env` for local
 (non-Docker) development.** (§13 #3) Docker passes `--env-file`, so there is no project-root `.env`

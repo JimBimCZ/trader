@@ -11,7 +11,36 @@ Conventions:
   **Timestamps in the SSE payload are Unix float seconds.** These are the only two formats; the
   frontend converts at exactly one place, the SSE parse boundary. (DECISIONS D-27)
 - Money is a JSON number rounded to 2 decimal places. Quantities are rounded to 6.
-- `user_id` is always `"default"` and never appears in a request or response body.
+- `user_id` never appears in a request or response body. The caller is resolved server-side from
+  the `trader_session` cookie (§0) on every request; there is no way to name a user id on the wire.
+
+---
+
+## 0. Identity — the `trader_session` cookie
+
+There is no sign-in yet. Every request that reaches a route other than the two named below resolves
+a caller from a signed cookie, minting a fresh guest the first time a browser arrives without one
+(or with one that no longer verifies — see below). Nothing about this is visible in a request or
+response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
+
+| Attribute | Value |
+|---|---|
+| Name | `trader_session` |
+| Contents | The user id, signed (itsdangerous `URLSafeTimedSerializer`); opaque to the client |
+| `Max-Age` | `7776000` seconds (90 days) |
+| `HttpOnly` | yes |
+| `SameSite` | `Lax` |
+| `Secure` | Set when the request reached the app over https — judged from `X-Forwarded-Proto` when present (so a TLS-terminating proxy like Vercel is honored), falling back to the request's own scheme otherwise. **Not** decided by hostname: a Docker deployment reached over plain http on a LAN address must not get a `Secure` cookie, or the browser silently refuses to store it and mints a fresh guest on every request. |
+| `Path` | `/` |
+
+A cookie that fails to verify — tampered, signed under a rotated `SESSION_SECRET`, or pointing at a
+row a database reset removed — is treated exactly like no cookie at all: a fresh guest is minted
+rather than the request failing with 401. There is nothing to log in to yet, so an unreadable
+session is not an error condition.
+
+**Two routes never mint a guest and never touch the cookie:** `GET /api/health` and
+`GET /api/stream/prices`. Both are read-only against shared, non-user-scoped state (process health;
+the shared price cache), so neither needs — or creates — a user.
 
 ---
 
@@ -32,11 +61,13 @@ safe to display verbatim. No other top-level keys.
 | `INVALID_QUANTITY` | 400 | Not finite, or ≤ 0 |
 | `INSUFFICIENT_CASH` | 400 | Buy cost exceeds cash balance |
 | `INSUFFICIENT_SHARES` | 400 | Sell quantity exceeds held quantity (no short selling) |
-| `WATCHLIST_FULL` | 400 | Watchlist already holds 25 tickers |
+| `WATCHLIST_FULL` | 400 | *This caller's own* watchlist already holds 25 tickers (`watchlist_cap`) |
 | `TICKER_NOT_FOUND` | 404 | Ticker is not on the watchlist / has no history |
 | `PRICE_UNAVAILABLE` | 409 | No cached price yet; the trade is refused rather than filled at 0 |
 | `VALIDATION_ERROR` | 422 | Request body failed schema validation |
 | `VALUATION_UNAVAILABLE` | 500 | A held position has no cached price, so the portfolio cannot be valued |
+| `MARKET_CAPACITY_FULL` | 503 | The *global* tracked-ticker set (across every user, `market_capacity`, default 100) is full. Distinct from `WATCHLIST_FULL`: this can fire for a caller whose own watchlist holds three tickers, because the deployment as a whole is already tracking its cap. |
+| `CLEANUP_FORBIDDEN` | 403 | `POST`/`GET /api/admin/cleanup` called without a valid `X-Cleanup-Secret` header, or `CLEANUP_SECRET` is unset |
 | `INTERNAL_ERROR` | 500 | Unexpected failure; details are logged, never returned |
 
 `POST /api/chat` is the one endpoint that does **not** use this envelope for upstream LLM failures —
@@ -67,6 +98,8 @@ data: {"AAPL": { ... }, "MSFT": { ... }}
 - `: keepalive` comment frames are sent after 15s without a data frame. `EventSource` ignores them;
   they exist to stop idle proxies dropping the connection.
 - There is no `event:` name, so the client uses `onmessage`, not `addEventListener("...")`.
+- Never mints a session cookie (§0) — the stream serves the one shared price cache, not a per-user
+  view, so there is no caller to resolve.
 
 ### PriceSnapshot
 
@@ -161,7 +194,8 @@ Response `200`:
 - `realized_pnl` is populated on sells and `null` on buys. It is computed, never stored.
 - Trading a ticker that is not on the watchlist **auto-adds it** to the watchlist and the price
   source (DECISIONS D-05). If no price is cached yet, the trade fails with `PRICE_UNAVAILABLE`
-  rather than filling at 0.
+  rather than filling at 0. If the *global* tracked-ticker set is already at capacity, the trade
+  fails with `MARKET_CAPACITY_FULL` instead — a limit on the deployment, not on this caller.
 - Validation order and error codes: `INVALID_TICKER` → `INVALID_QUANTITY` → `PRICE_UNAVAILABLE` →
   `INSUFFICIENT_CASH` / `INSUFFICIENT_SHARES`.
 
@@ -173,8 +207,11 @@ Response `200`:
 {"snapshots": [{"total_value": 10000.00, "recorded_at": "2026-08-18T09:00:00Z"}]}
 ```
 
-A snapshot is written at database init, every 30 seconds, and immediately after every trade. Rows
-older than 7 days are pruned.
+A snapshot is written: once at t=0, the moment a guest is minted or reset (so a brand-new
+portfolio's chart is never empty); immediately after every trade; and — for every user active
+within the last hour — every 30 seconds by a background task (the container target) or on the next
+`GET /api/portfolio` past the interval (the serverless target, which has no background task; see
+`planning/VERCEL_DEPLOYMENT.md`). Rows older than 7 days are pruned, per user.
 
 ---
 
@@ -186,8 +223,10 @@ older than 7 days are pruned.
 {"tickers": ["AAPL", "GOOGL", "MSFT"], "cap": 25}
 ```
 
-Ordered by `added_at` ascending — the frontend renders in exactly this order and never derives row
-order from the SSE map. **No prices are returned**; prices come from SSE only (DECISIONS D-24).
+This is the **calling user's own** watchlist, scoped by the session cookie (§0) — every user has an
+independent list, capped independently at `cap`. Ordered by `added_at` ascending — the frontend
+renders in exactly this order and never derives row order from the SSE map. **No prices are
+returned**; prices come from SSE only (DECISIONS D-24).
 
 ### `POST /api/watchlist`
 
@@ -196,7 +235,8 @@ returns 200 and changes nothing.
 
 Response `200`: `{"tickers": ["AAPL", "...", "PYPL"], "cap": 25}`
 
-Errors: `INVALID_TICKER`, `WATCHLIST_FULL`.
+Errors: `INVALID_TICKER`, `WATCHLIST_FULL` (this caller's own list is at cap), `MARKET_CAPACITY_FULL`
+(the global tracked set is at cap, even though this caller's list has room).
 
 ### `DELETE /api/watchlist/{ticker}`
 
@@ -204,7 +244,10 @@ Response `200`: `{"tickers": [...], "cap": 25}`. Errors: `INVALID_TICKER`, `TICK
 
 Removing a ticker you still hold is **allowed**. The watchlist row is deleted but the price feed
 continues, because the price source tracks `union(watchlist, tickers with an open position)`
-(DECISIONS D-01/D-02/D-03). The position remains visible in the positions table and heatmap.
+**across every user, not just the caller** (DECISIONS D-01/D-02/D-03 — superseded to be global; see
+`planning/DECISIONS.md`). Even after this caller drops both their watchlist entry and their
+position, the ticker stays tracked as long as any other user still watches or holds it. The
+position remains visible in the positions table and heatmap.
 
 ---
 
@@ -219,10 +262,11 @@ Seeds charts on first paint so they are not empty after a reload.
 }
 ```
 
-Up to the last 600 ticks, oldest-first, held in memory only — the buffer is empty after a restart
-and is cleared by `POST /api/reset`. `timestamp` is Unix float seconds, matching the SSE payload.
-A ticker that has never been tracked returns `TICKER_NOT_FOUND`; a tracked ticker with no ticks yet
-returns an empty `points` array.
+Up to the last 600 ticks, oldest-first, held in memory only — the buffer is empty after a restart.
+It is per-ticker and shared by every user, so `POST /api/reset` deliberately leaves it alone:
+clearing it on one person's reset would blank everyone else's main chart too. `timestamp` is Unix
+float seconds, matching the SSE payload. A ticker that has never been tracked returns
+`TICKER_NOT_FOUND`; a tracked ticker with no ticks yet returns an empty `points` array.
 
 ---
 
@@ -323,11 +367,29 @@ It never needs a separate error path for chat. Request timeout is 30 seconds wit
 `status` is `"ok"` or `"degraded"`. `market_source` is `"simulator"`, `"massive"`, or
 `"deterministic"` (a serverless deployment with no background task to tick a stateful simulator).
 `seconds_since_last_tick` is `null` before the first tick. E2E waits on this instead of sleeping.
+Never mints a session cookie (§0) — it reports on shared process state, not on any one caller.
 
 ### `POST /api/reset`
 
-Restores the seeded state: $10,000 cash, the ten default tickers, no positions, no trades, no chat
-history, cleared price history, one fresh snapshot. Returns the same body as `GET /api/portfolio`.
+Restores the **calling user's own** seeded state: $10,000 cash, the ten default tickers, no
+positions, no trades, no chat history, one fresh snapshot. It never touches any other user's rows —
+notably, it does **not** clear the price history ring buffer, which is per-ticker and shared by
+every user; wiping it on one person's reset would blank everyone else's main chart. Returns the
+same body as `GET /api/portfolio`.
+
+### `GET` / `POST /api/admin/cleanup`
+
+Deletes guest accounts idle past `GUEST_TTL_DAYS`; the foreign keys cascade away their watchlist,
+positions, trades, chat, and snapshots with them. Never expires a signed-in user (there are none
+yet). Guarded by a shared secret rather than by the caller's identity — there is no admin user in
+this app, and the route must be callable by a scheduler with no cookie of its own:
+
+- Requires header `X-Cleanup-Secret: <CLEANUP_SECRET>`, compared with a constant-time check.
+  Missing or wrong → `CLEANUP_FORBIDDEN` (403). An unset `CLEANUP_SECRET` rejects every call.
+- Both methods run the same logic. `GET` exists because Vercel Cron issues a GET; `POST` is for
+  manual/curl use.
+- Response `200`: `{"deleted": 3}` — the count of guests removed.
+- This route is one of the two that never mints a guest (§0); calling it does not create a session.
 
 ---
 

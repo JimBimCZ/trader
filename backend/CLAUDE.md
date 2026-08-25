@@ -12,7 +12,7 @@ uv sync --extra dev
 ## Commands
 
 ```bash
-uv run --extra dev pytest                      # 392 tests, needs Postgres (see Testing below)
+uv run --extra dev pytest                      # 492 tests, needs Postgres (see Testing below)
 uv run --extra dev pytest --cov=app            # with coverage
 uv run --extra dev pytest tests/portfolio -v   # one area
 uv run --extra dev ruff check app/ tests/      # lint
@@ -30,15 +30,16 @@ STATIC_DIR=../frontend/out uv run uvicorn app.main:app   # with the built fronte
 | `app/config.py` | `Settings`, read once from the environment |
 | `app/clock.py` | `now_ts()` / `utcnow_iso()` — the single time seam; patch these in tests |
 | `app/errors.py` | `AppError` subclasses and the JSON error envelope |
-| `app/deps.py` | FastAPI dependencies, resolved from `app.state` |
-| `app/reconcile.py` | Owns the tracked-ticker set |
-| `app/db/` | Postgres connection, schema, seed, migrations |
+| `app/deps.py` | FastAPI dependencies: resolves the caller from the session cookie, then builds each service per request, scoped to that user |
+| `app/identity/` | The signed session cookie (`cookie.py`), the user record (`models.py`), and the user store — mint/load/touch/expire (`store.py`) |
+| `app/reconcile.py` | Owns the tracked-ticker set, globally across every user |
+| `app/db/` | Postgres connection, schema, per-user seed, migrations |
 | `app/market/` | Simulator, Massive client, price cache, SSE |
 | `app/portfolio/` | Trades, valuation, snapshots |
 | `app/watchlist/` | Watchlist CRUD |
 | `app/history/` | In-memory price ring buffer |
 | `app/llm/` | Chat, structured outputs, mock client |
-| `app/system/` | Health and reset |
+| `app/system/` | Health, reset, guest cleanup |
 
 Each domain is repository → service → router. Logic goes in the service, SQL in the repository,
 HTTP translation only in the router.
@@ -56,6 +57,10 @@ HTTP translation only in the router.
 4. **`trades` is authoritative.** `positions` and `cash_balance` are a maintained projection.
 5. **`change_percent` is not the daily change.** Use `daily_change_percent`, which is measured from
    `session_open`.
+6. **There is no `DEFAULT_USER_ID`.** Every repository constructor requires a `user_id`; there is
+   no default to fall back on. Services are built per request in `app/deps.py`, scoped to whichever
+   user the session cookie resolves to — never build one without an explicit user id, in a test or
+   otherwise.
 
 ## Market data API
 
@@ -89,9 +94,9 @@ with each test getting its own throwaway schema, dropped afterward. Shared fixtu
 | Fixture | What it gives you |
 |---|---|
 | `settings` | Settings pointed at a fresh throwaway schema, LLM mocked, seeded RNG |
-| `db` / `seeded_db` | An initialized (and optionally seeded) database, in its own schema |
+| `db` / `seeded_db` | An initialized database in its own schema; `seeded_db` additionally seeds one known `TEST_USER_ID`, standing in for the first request that mints a guest — production seeds nothing at startup |
 | `price_cache` / `priced_cache` | A bare cache, or one pre-filled at seed prices |
-| `services` | Every service wired together against a stub market source |
+| `services` | Every service wired together against a stub market source, scoped to `TEST_USER_ID` |
 | `api_client` | A `TestClient` over a fully started app (real lifespan) |
 
 Service-level tests construct services directly rather than going through HTTP; reserve
