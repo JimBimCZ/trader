@@ -12,13 +12,19 @@ import type { AuthProvider } from "@/lib/types";
  * Buttons wear the neutral fill rather than Google's or GitHub's brand
  * colours -- those would be the only non-systemBlue interaction colours in the
  * app, and would read as an advertisement rather than as a control.
+ *
+ * A `card`, not the toolbar's `material`, deliberately: a backdrop-filter
+ * nested inside another one samples its ancestor's filtered group, not the
+ * page, so `material` here is a 72% fill over an *unblurred* backdrop -- the
+ * chat panel's text reads straight through it. An opaque surface is the only
+ * one of the two that is legible over the workspace.
  */
 export function SignInSheet({ providers }: { providers: AuthProvider[] }) {
   return (
     <div
       role="dialog"
       aria-label="Sign in"
-      className="material absolute right-0 top-full z-20 mt-2 w-64 rounded-card p-3 shadow-pop"
+      className="card absolute right-0 top-full z-20 mt-2 w-64 p-3 shadow-pop"
     >
       <p className="field-label px-1">Sign in</p>
       <p className="mt-1 px-1 text-[12px] leading-snug text-text-muted">

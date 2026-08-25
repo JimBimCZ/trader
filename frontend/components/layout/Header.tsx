@@ -34,7 +34,13 @@ export function Header() {
   const share = (value: number) => (totalValue ? (value / totalValue) * 100 : 0);
 
   return (
-    <header className="rise material flex flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-3.5">
+    // `relative z-30` is what lets the account menu and the sign-in sheet
+    // hang below the toolbar. `.material` carries a backdrop-filter, which
+    // makes this element its own stacking context and seals their `z-20`
+    // inside it; at `z-index: auto` the toolbar is simply earlier in the DOM
+    // than <main>, so the chat panel painted over an open sheet. 30 sits
+    // above the workspace and below ClaimConflictDialog at 50.
+    <header className="rise material relative z-30 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-3.5">
       <div className="min-w-0">
         <p className="field-label">Portfolio value</p>
         <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
