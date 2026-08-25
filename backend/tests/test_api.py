@@ -194,9 +194,7 @@ class TestExportedSubroutes:
         """Client-side routes have no directory, and must reach the SPA."""
         assert "app shell" in api_client.get("/no/such/route").text
 
-    def test_a_directory_without_an_index_falls_back_to_the_shell(
-        self, api_client, static_export
-    ):
+    def test_a_directory_without_an_index_falls_back_to_the_shell(self, api_client, static_export):
         """A bare directory is not a page; only its index.html is."""
         (static_export / "assets").mkdir()
         assert "app shell" in api_client.get("/assets/").text
