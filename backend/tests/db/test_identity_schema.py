@@ -21,7 +21,7 @@ class TestFreshSchema:
         row = await db.fetch_one(
             "SELECT COUNT(*) AS n FROM information_schema.columns "
             "WHERE table_name = 'users_profile' AND column_name = $1",
-            column,
+            (column,),
         )
         assert row["n"] == 1
 
@@ -32,13 +32,13 @@ class TestConstraints:
         await db.execute(
             "INSERT INTO oauth_identities (provider, provider_user_id, user_id, email, "
             "created_at) VALUES ('google', 'sub-1', $1, 'a@b.c', '2026-01-01T00:00:00Z')",
-            seeded_user_id,
+            (seeded_user_id,),
         )
         with pytest.raises(Exception):
             await db.execute(
                 "INSERT INTO oauth_identities (provider, provider_user_id, user_id, email, "
                 "created_at) VALUES ('google', 'sub-1', $1, 'a@b.c', '2026-01-01T00:00:00Z')",
-                seeded_user_id,
+                (seeded_user_id,),
             )
 
     async def test_deleting_the_user_removes_the_identity(self, db, seeded_user_id):
@@ -47,9 +47,9 @@ class TestConstraints:
         await db.execute(
             "INSERT INTO oauth_identities (provider, provider_user_id, user_id, email, "
             "created_at) VALUES ('github', 'sub-2', $1, NULL, '2026-01-01T00:00:00Z')",
-            seeded_user_id,
+            (seeded_user_id,),
         )
-        await db.execute("DELETE FROM users_profile WHERE id = $1", seeded_user_id)
+        await db.execute("DELETE FROM users_profile WHERE id = $1", (seeded_user_id,))
         row = await db.fetch_one("SELECT COUNT(*) AS n FROM oauth_identities")
         assert row["n"] == 0
 
