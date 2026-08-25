@@ -64,6 +64,7 @@ with `--env-file`.
 | `SESSION_SECRET` | **Yes, in production** | a random value, regenerated every restart | Signs the `trader_session` cookie that is the only pointer to a guest's row. Leave it unset and it works for local dev, but **every restart mints a new secret, which invalidates every existing cookie and permanently orphans every guest's portfolio** — the row is still in Postgres, but nothing can ever prove which cookie pointed at it again. Set it to a fixed random string before deploying. |
 | `GUEST_TTL_DAYS` | No | `7` | Days of inactivity (`last_seen_at`) after which a guest account — and everything that cascades from it: watchlist, positions, trades, chat — is deleted. |
 | `CLEANUP_SECRET` | No | empty | Shared secret required (as the `X-Cleanup-Secret` header) to call `POST`/`GET /api/admin/cleanup`, which deletes guests past `GUEST_TTL_DAYS`. Unset, the route refuses every call — the safe default for an endpoint that deletes rows. |
+| `CRON_SECRET` | No | empty | Fallback for `CLEANUP_SECRET`, checked against an `Authorization: Bearer` header instead of `X-Cleanup-Secret`. This is Vercel's own convention — it auto-attaches that header to every Cron invocation — so a Vercel deployment sets this one and needs nothing else for the scheduled cleanup to authenticate. Not used by the Docker target, which has no Cron. |
 
 ### Market data
 
@@ -133,9 +134,8 @@ The repository root carries `vercel.json`, `requirements.txt` and `api/index.py`
 deploys. `DATABASE_URL` must be set to a Neon **pooled** connection string before the deployment is
 usable — there is no fallback database, so the app refuses to start without one. Set `SESSION_SECRET`
 too, or every cold start regenerates it and orphans every existing guest. `vercel.json` schedules a
-daily Cron hit against `/api/admin/cleanup`, but as shipped that hit cannot yet authenticate itself
-(Vercel Cron has no way to attach the required header) — see `planning/VERCEL_DEPLOYMENT.md` for
-the detail, including this gap.
+daily Cron hit against `/api/admin/cleanup`; set `CRON_SECRET` (Vercel's own convention) so it can
+authenticate that hit. `planning/VERCEL_DEPLOYMENT.md` has the detail.
 
 ## Documentation
 

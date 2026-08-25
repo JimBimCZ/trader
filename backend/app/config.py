@@ -88,7 +88,9 @@ class Settings:
 
     #: Guards POST/GET /api/admin/cleanup, which deletes idle guest accounts.
     #: Unset, the endpoint refuses every call -- the safe default for a route
-    #: that deletes rows.
+    #: that deletes rows. Resolved in `from_env` from CLEANUP_SECRET, falling
+    #: back to CRON_SECRET -- Vercel's own convention, so a Vercel deployment
+    #: needs to set only the one variable its own docs already tell it to.
     cleanup_secret: str = ""
 
     #: Minimum gap between `last_seen_at` writes for the same user, so an
@@ -181,5 +183,13 @@ class Settings:
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
             session_secret=session_secret,
             guest_ttl_days=_env_int("GUEST_TTL_DAYS", 7) or 7,
-            cleanup_secret=os.environ.get("CLEANUP_SECRET", "").strip(),
+            # CLEANUP_SECRET takes precedence; CRON_SECRET is the fallback so
+            # a Vercel deployment that only sets the variable Vercel's own
+            # docs prescribe (for its auto-sent `Authorization: Bearer
+            # $CRON_SECRET`) still guards this route without a second,
+            # duplicate variable.
+            cleanup_secret=(
+                os.environ.get("CLEANUP_SECRET", "").strip()
+                or os.environ.get("CRON_SECRET", "").strip()
+            ),
         )

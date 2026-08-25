@@ -143,7 +143,8 @@ class ConfigurationError(AppError):
 
 
 class CleanupForbiddenError(AppError):
-    """The guest-cleanup route was called without a valid X-Cleanup-Secret.
+    """The guest-cleanup route was called without a valid secret, in either
+    the `X-Cleanup-Secret` header or an `Authorization: Bearer` header.
 
     Also what an unset `cleanup_secret` produces on every call -- the safe
     default for an endpoint that deletes rows.

@@ -128,3 +128,34 @@ class TestSessionSecret:
         first = Settings.from_env().session_secret
         second = Settings.from_env().session_secret
         assert first != second
+
+
+class TestCleanupSecret:
+    """CLEANUP_SECRET and CRON_SECRET both guard /api/admin/cleanup.
+
+    CRON_SECRET is Vercel's own convention -- it auto-attaches an
+    `Authorization: Bearer $CRON_SECRET` header to every Cron invocation, and
+    a Vercel deployment should not need a second, duplicate variable just for
+    this app's route.
+    """
+
+    def test_reads_cleanup_secret_when_only_it_is_set(self, monkeypatch):
+        monkeypatch.setenv("CLEANUP_SECRET", "cleanup-value")
+        monkeypatch.delenv("CRON_SECRET", raising=False)
+        assert Settings.from_env().cleanup_secret == "cleanup-value"
+
+    def test_falls_back_to_cron_secret_when_cleanup_secret_is_unset(self, monkeypatch):
+        monkeypatch.delenv("CLEANUP_SECRET", raising=False)
+        monkeypatch.setenv("CRON_SECRET", "cron-value")
+        assert Settings.from_env().cleanup_secret == "cron-value"
+
+    def test_cleanup_secret_takes_precedence_over_cron_secret(self, monkeypatch):
+        """Both set: CLEANUP_SECRET wins, since it names this route directly."""
+        monkeypatch.setenv("CLEANUP_SECRET", "cleanup-value")
+        monkeypatch.setenv("CRON_SECRET", "cron-value")
+        assert Settings.from_env().cleanup_secret == "cleanup-value"
+
+    def test_defaults_to_empty_when_neither_is_set(self, monkeypatch):
+        monkeypatch.delenv("CLEANUP_SECRET", raising=False)
+        monkeypatch.delenv("CRON_SECRET", raising=False)
+        assert Settings.from_env().cleanup_secret == ""

@@ -161,3 +161,34 @@ class TestCleanupRouteWithSecretConfigured:
         distinct from the unset-secret case in `TestCleanupRoute`."""
         response = configured_client.post("/api/admin/cleanup")
         assert response.status_code in (401, 403)
+
+
+class TestCleanupRouteAcceptsVercelsBearerHeader:
+    """Vercel Cron cannot be configured to send a custom header -- its own
+    mechanism is `Authorization: Bearer <CRON_SECRET>`, auto-attached to
+    every invocation. The route must accept that alongside `X-Cleanup-Secret`
+    (which a human or a non-Vercel scheduler sends), against the same
+    configured secret -- otherwise the shipped Cron entry gets 403 forever
+    and idle guests accumulate without bound on a Vercel deployment.
+    """
+
+    async def test_get_with_the_correct_bearer_token_succeeds(self, configured_client):
+        response = configured_client.get(
+            "/api/admin/cleanup", headers={"Authorization": f"Bearer {CLEANUP_SECRET}"}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"deleted": 0}
+
+    async def test_a_same_length_wrong_bearer_token_is_refused(self, configured_client):
+        response = configured_client.post(
+            "/api/admin/cleanup",
+            headers={"Authorization": f"Bearer {WRONG_SECRET_SAME_LENGTH}"},
+        )
+        assert response.status_code in (401, 403)
+
+    async def test_a_malformed_authorization_header_is_refused(self, configured_client):
+        """No `Bearer ` prefix at all -- not just a wrong token."""
+        response = configured_client.post(
+            "/api/admin/cleanup", headers={"Authorization": CLEANUP_SECRET}
+        )
+        assert response.status_code in (401, 403)

@@ -98,7 +98,7 @@ inside the SSE generator) was deleted outright, because the SSE stream never res
 | Simulator loop | Deleted. Prices are computed, not ticked. |
 | History collector | Deleted. History is computed backwards from now. |
 | Snapshot writer | `GET /api/portfolio` calls `TradeService.write_snapshot_if_stale()`, which writes a snapshot for the calling user only when their newest one is already older than `snapshot_interval_seconds` (30s default). Trades still write their own snapshot inline, as they always have. This reuses exactly the read that is naturally scoped to a user who is actually looking at the app — the same principle the deleted SSE-heartbeat approach was reaching for, without needing a stream to hang it off. |
-| Guest cleanup | Deleted as a background task on this target (nothing runs between requests to drive a loop). `vercel.json` schedules a daily `GET /api/admin/cleanup` hit at `0 4 * * *` (04:00 UTC) instead. **This does not yet work end-to-end**: the route requires an `X-Cleanup-Secret` header (`planning/API_CONTRACT.md` §8), but a `vercel.json` `crons` entry takes only `path` and `schedule` — there is no way to attach a custom header to it. Vercel's own convention for a secured cron target is a `CRON_SECRET` env var it auto-injects as `Authorization: Bearer <CRON_SECRET>` (confirmed against Vercel's current docs), which is *not* what this route checks. So, as configured, the daily Cron hit arrives with no `X-Cleanup-Secret` and is rejected with `CLEANUP_FORBIDDEN` exactly like any other unauthenticated call — idle guests are not actually expired on this target yet. `CLEANUP_SECRET` today only makes the route reachable by a manual/curl call that sets the header by hand. Closing this gap (switching the check to `CRON_SECRET`/`Authorization`, or fronting the Cron hit some other way) is unresolved. |
+| Guest cleanup | Deleted as a background task on this target (nothing runs between requests to drive a loop). `vercel.json` schedules a daily `GET /api/admin/cleanup` hit at `0 4 * * *` (04:00 UTC) instead. A `vercel.json` `crons` entry takes only `path` and `schedule` — there is no way to attach a custom header to it — so the route accepts Vercel's own convention as well as its native one: it reads either `X-Cleanup-Secret` (a human or a non-Vercel scheduler) or `Authorization: Bearer <secret>` (what Vercel Cron auto-attaches whenever `CRON_SECRET` is set), and checks either against the same configured secret. Set `CRON_SECRET` in the dashboard and the scheduled hit authenticates itself with no other configuration. |
 
 The container target keeps both as real background tasks: `SnapshotWriter` ticks every 30s and
 writes one snapshot per user active in the last hour; `GuestCleaner` runs once a day in-process.
@@ -127,9 +127,11 @@ therefore ships ~15 MB of dependencies instead of ~160 MB.
   session baseline exact.
 - **The AI chat ships mocked.** Adding `OPENROUTER_API_KEY` alone is not enough; `litellm` must
   also be added back to `requirements.txt`.
-- **Idle guests are not actually expired on this target yet.** `vercel.json`'s Cron entry hits
-  `GET /api/admin/cleanup` daily, but the route requires an `X-Cleanup-Secret` header and a
-  `crons` entry has no way to attach one — see §3. Unresolved.
+- **Guest cleanup needs `CRON_SECRET` set to actually run.** `vercel.json`'s Cron entry hits
+  `GET /api/admin/cleanup` daily; the route accepts the `Authorization: Bearer` header Vercel Cron
+  auto-attaches when `CRON_SECRET` is set, as well as `X-Cleanup-Secret` — see §3. Leave
+  `CRON_SECRET` unset and the route (correctly) refuses every call, including the Cron one, so
+  idle guests accumulate.
 
 ## Deploying
 
@@ -139,8 +141,8 @@ rewrite is what sends `/api/*` to it and nothing else.
 
 ```
 vercel.json        build, rewrite, function limits, non-secret env, and the daily
-                    guest-cleanup Cron entry (`0 4 * * *` → `GET /api/admin/cleanup`,
-                    though see §3's note: it cannot yet authenticate itself)
+                    guest-cleanup Cron entry (`0 4 * * *` → `GET /api/admin/cleanup`;
+                    set `CRON_SECRET` so it can authenticate itself, per §3)
 requirements.txt   the function's dependencies — deliberately not the backend's full set
 api/index.py       puts backend/ on the import path and exposes app.main:app
 ```
@@ -155,7 +157,8 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 | `DATABASE_URL` | dashboard | Neon's **pooled** URI. **Required** — there is no fallback any more; absent, the function raises `ConfigurationError` on cold start instead of running on ephemeral storage. |
 | `SESSION_SECRET` | dashboard | Signs the `trader_session` cookie. Every cold start with it unset generates a fresh one, which invalidates every existing cookie and permanently orphans every guest's portfolio — the row survives in Neon, but nothing can prove which cookie pointed at it. On a platform that recycles instances constantly, leaving this unset is worse here than on a long-lived container. Set it once, in the dashboard, before real use. |
 | `GUEST_TTL_DAYS` | dashboard (optional) | Days of inactivity before a guest is deleted (default 7). Read by the Cron-driven cleanup route, same as on the container target. |
-| `CLEANUP_SECRET` | dashboard | Guards `GET`/`POST /api/admin/cleanup` (`X-Cleanup-Secret` header). Set or not, **the scheduled Cron hit itself cannot supply this header today** — see the Guest cleanup row above — so on this target it currently only enables a manual/curl call, not the automated one `vercel.json` schedules. |
+| `CRON_SECRET` | dashboard | Vercel's own convention: setting this auto-attaches `Authorization: Bearer $CRON_SECRET` to every Cron invocation, which the cleanup route accepts directly. **This is the one to set on this target** — it needs no other configuration for the scheduled hit in `vercel.json` to authenticate. |
+| `CLEANUP_SECRET` | dashboard (optional) | Guards the same route via `X-Cleanup-Secret` instead, for a manual/curl call. Falls back to `CRON_SECRET` when unset (`app/config.py`), so setting `CRON_SECRET` alone is sufficient on Vercel — this variable is only needed to give a human caller a different secret than the Cron one. |
 
 ### Finishing the setup
 
@@ -167,6 +170,10 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 2. **Add the real assistant**, if wanted. Put `litellm` in `requirements.txt` and
    `OPENROUTER_API_KEY` in the dashboard, and drop `LLM_MOCK` from `vercel.json`. It adds ~130 MB to
    the bundle and a real cost per message, on an app that has no authentication.
+3. **Set `SESSION_SECRET` and `CRON_SECRET`.** Without the first, every cold start orphans every
+   existing guest; without the second, the daily guest-cleanup Cron hit is rejected and idle guests
+   are never expired. Both are ordinary dashboard environment variables — no other configuration
+   is needed for either to take effect.
 
 ### Access and cost
 

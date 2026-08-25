@@ -67,7 +67,7 @@ safe to display verbatim. No other top-level keys.
 | `VALIDATION_ERROR` | 422 | Request body failed schema validation |
 | `VALUATION_UNAVAILABLE` | 500 | A held position has no cached price, so the portfolio cannot be valued |
 | `MARKET_CAPACITY_FULL` | 503 | The *global* tracked-ticker set (across every user, `market_capacity`, default 100) is full. Distinct from `WATCHLIST_FULL`: this can fire for a caller whose own watchlist holds three tickers, because the deployment as a whole is already tracking its cap. |
-| `CLEANUP_FORBIDDEN` | 403 | `POST`/`GET /api/admin/cleanup` called without a valid `X-Cleanup-Secret` header, or `CLEANUP_SECRET` is unset |
+| `CLEANUP_FORBIDDEN` | 403 | `POST`/`GET /api/admin/cleanup` called without a valid secret in either `X-Cleanup-Secret` or `Authorization: Bearer`, or no secret is configured at all |
 | `INTERNAL_ERROR` | 500 | Unexpected failure; details are logged, never returned |
 
 `POST /api/chat` is the one endpoint that does **not** use this envelope for upstream LLM failures —
@@ -384,8 +384,12 @@ positions, trades, chat, and snapshots with them. Never expires a signed-in user
 yet). Guarded by a shared secret rather than by the caller's identity — there is no admin user in
 this app, and the route must be callable by a scheduler with no cookie of its own:
 
-- Requires header `X-Cleanup-Secret: <CLEANUP_SECRET>`, compared with a constant-time check.
-  Missing or wrong → `CLEANUP_FORBIDDEN` (403). An unset `CLEANUP_SECRET` rejects every call.
+- Requires the secret in one of two headers, compared with a constant-time check against the same
+  configured value (`Settings.cleanup_secret`, itself resolved from `CLEANUP_SECRET` falling back
+  to `CRON_SECRET`): `X-Cleanup-Secret: <secret>`, or `Authorization: Bearer <secret>` — the header
+  Vercel Cron auto-attaches when `CRON_SECRET` is set, since a `vercel.json` `crons` entry cannot
+  be configured to send a custom header at all. Missing or wrong on both → `CLEANUP_FORBIDDEN`
+  (403). No secret configured on either variable rejects every call.
 - Both methods run the same logic. `GET` exists because Vercel Cron issues a GET; `POST` is for
   manual/curl use.
 - Response `200`: `{"deleted": 3}` — the count of guests removed.

@@ -29,6 +29,27 @@ async def reset(service: TradeServiceDep, reset_service: ResetServiceDep) -> dic
     return view.to_dict()
 
 
+def _supplied_secret(request: Request) -> str:
+    """The caller's proof of authorization, from whichever header carries it.
+
+    Two callers use this route: a human or a non-Vercel scheduler, who sends
+    `X-Cleanup-Secret` directly; and Vercel Cron, which cannot be configured
+    to send a custom header at all -- its own mechanism is `Authorization:
+    Bearer <CRON_SECRET>`, auto-attached whenever `CRON_SECRET` is set. Both
+    are compared against the same configured secret (`Settings.cleanup_secret`,
+    itself resolved from `CLEANUP_SECRET` or `CRON_SECRET`), so either header
+    authorizes the same call.
+    """
+    direct = request.headers.get("X-Cleanup-Secret")
+    if direct is not None:
+        return direct
+    authorization = request.headers.get("Authorization", "")
+    prefix = "Bearer "
+    if authorization.startswith(prefix):
+        return authorization[len(prefix) :]
+    return ""
+
+
 @router.api_route("/admin/cleanup", methods=["GET", "POST"])
 async def cleanup(request: Request) -> dict:
     """Expire idle guests. Driven by Vercel Cron, which issues a GET where no
@@ -38,9 +59,12 @@ async def cleanup(request: Request) -> dict:
     user in this app, and the endpoint must be callable by a scheduler.
     """
     secret = request.app.state.settings.cleanup_secret
-    supplied = request.headers.get("X-Cleanup-Secret", "")
+    supplied = _supplied_secret(request)
     if not secret or not secrets.compare_digest(supplied, secret):
-        raise CleanupForbiddenError("Cleanup requires a valid X-Cleanup-Secret header.")
+        raise CleanupForbiddenError(
+            "Cleanup requires a valid X-Cleanup-Secret header, or an "
+            "Authorization: Bearer header carrying the same secret."
+        )
     deleted = await GuestCleaner(
         request.app.state.user_store, request.app.state.settings
     ).run_once()
