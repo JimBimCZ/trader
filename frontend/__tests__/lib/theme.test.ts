@@ -37,6 +37,8 @@ function pairings({ colors: c }: Palette): [string, string, string][] {
     ["flat in its pill", c.flat, c.flatWash],
     ["connecting in its pill", c.yellowText, c.yellowWash],
     ["link on card", c.blueText, c.surface],
+    ["footer note on canvas", c.textMuted, c.bg],
+    ["footer link on canvas", c.blueText, c.bg],
     ["tinted button label", c.blueText, c.blueWash],
     ["prominent button label", "#FFFFFF", c.blueFill],
     ["buy button label", "#FFFFFF", c.upFill],

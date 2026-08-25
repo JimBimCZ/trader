@@ -238,9 +238,15 @@ def _register_static_routes(app: FastAPI) -> None:
 
         candidate = (STATIC_DIR / full_path).resolve()
         static_root = STATIC_DIR.resolve()
-        # Only serve files inside the static root, never a traversal target.
-        if candidate.is_file() and static_root in candidate.parents:
-            return FileResponse(candidate)
+        # `trailingSlash: true` exports every route as its own directory, so a
+        # second page is `<route>/index.html` on disk rather than a bare file.
+        # Trying only the first would answer /privacy/ with the app shell --
+        # invisible on Vercel, whose CDN resolves the directory itself, and so
+        # wrong only on the container target. Both lookups keep the same guard:
+        # serve from inside the static root, never a traversal target.
+        for target in (candidate, candidate / "index.html"):
+            if target.is_file() and static_root in target.parents:
+                return FileResponse(target)
 
         index = static_root / "index.html"
         if index.is_file():

@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { usePriceStream } from "@/lib/stream/usePriceStream";
-import { useTheme } from "@/lib/useTheme";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { useChatStore } from "@/store/useChatStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { Header } from "@/components/layout/Header";
 import { Rail } from "@/components/layout/Rail";
+import { Footer } from "@/components/layout/Footer";
+import { ThemeSync } from "@/components/layout/ThemeSync";
 import { ClaimConflictDialog } from "@/components/layout/ClaimConflictDialog";
 import { CHART_MIN_H, PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
@@ -34,11 +35,6 @@ const PortfolioHeatmap = dynamic(
 
 export default function Page() {
   usePriceStream();
-
-  // Runs after mount rather than during render because the page is
-  // prerendered: deciding any earlier would disagree with the exported HTML.
-  const hydrateTheme = useTheme((s) => s.hydrate);
-  useEffect(hydrateTheme, [hydrateTheme]);
 
   const selectedTicker = useWatchlistStore((s) => s.selectedTicker);
   const refreshWatchlist = useWatchlistStore((s) => s.refresh);
@@ -80,6 +76,7 @@ export default function Page() {
     // Below `lg` the fixed viewport split inverts to a page that scrolls as a
     // whole, because four panels in one viewport leaves each too short to read.
     <div className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:flex-row">
+      <ThemeSync />
       <ClaimConflictDialog />
       <Rail />
 
@@ -105,6 +102,8 @@ export default function Page() {
             <ChatPanel />
           </div>
         </main>
+
+        <Footer />
       </div>
     </div>
   );
