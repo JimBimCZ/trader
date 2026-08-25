@@ -14,8 +14,22 @@ CREATE TABLE IF NOT EXISTS users_profile (
     cash_balance DOUBLE PRECISION NOT NULL,
     created_at   TEXT NOT NULL,
     kind         TEXT NOT NULL DEFAULT 'guest' CHECK (kind IN ('guest','user')),
-    last_seen_at TEXT NOT NULL DEFAULT ''
+    last_seen_at TEXT NOT NULL DEFAULT '',
+    email        TEXT,
+    display_name TEXT,
+    avatar_url   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS oauth_identities (
+    provider         TEXT NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    user_id          TEXT NOT NULL REFERENCES users_profile (id) ON DELETE CASCADE,
+    email            TEXT,
+    created_at       TEXT NOT NULL,
+    PRIMARY KEY (provider, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities (user_id);
 
 CREATE TABLE IF NOT EXISTS watchlist (
     id       TEXT PRIMARY KEY,
