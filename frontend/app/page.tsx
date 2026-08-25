@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { usePriceStream } from "@/lib/stream/usePriceStream";
+import { useAppBoot } from "@/lib/useAppBoot";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { useChatStore } from "@/store/useChatStore";
@@ -11,6 +12,7 @@ import { Header } from "@/components/layout/Header";
 import { Rail } from "@/components/layout/Rail";
 import { Footer } from "@/components/layout/Footer";
 import { ThemeSync } from "@/components/layout/ThemeSync";
+import { BootScreen } from "@/components/layout/BootScreen";
 import { ClaimConflictDialog } from "@/components/layout/ClaimConflictDialog";
 import { CHART_MIN_H, PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
@@ -44,15 +46,9 @@ export default function Page() {
   const sessionVersion = useSessionStore((s) => s.sessionVersion);
   const loadSession = useSessionStore((s) => s.load);
 
-  useEffect(() => {
-    refreshWatchlist();
-    refreshPortfolio();
-    refreshChat();
-  }, [refreshWatchlist, refreshPortfolio, refreshChat]);
-
-  useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
+  // Owns the first load of all four, so the boot screen can hold until they
+  // have answered rather than letting the workspace assemble itself on screen.
+  const booted = useAppBoot();
 
   // The cookie now points at a different person, so everything on screen
   // belongs to the previous one. Keyed off the counter rather than chained
@@ -75,8 +71,12 @@ export default function Page() {
   return (
     // Below `lg` the fixed viewport split inverts to a page that scrolls as a
     // whole, because four panels in one viewport leaves each too short to read.
-    <div className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:flex-row">
+    <div
+      data-booting={booted ? undefined : ""}
+      className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:flex-row"
+    >
       <ThemeSync />
+      <BootScreen done={booted} />
       <ClaimConflictDialog />
       <Rail />
 
