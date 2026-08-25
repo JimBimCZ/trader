@@ -32,6 +32,7 @@ from .portfolio import router as portfolio_module
 from .portfolio.snapshot_writer import SnapshotWriter
 from .reconcile import TickerReconciler
 from .system import router as system_module
+from .system.cleanup import GuestCleaner
 from .watchlist import router as watchlist_module
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await snapshot_writer.start()
         stack.push_async_callback(snapshot_writer.stop)
+
+        # Nothing runs between requests on a serverless instance, so idle
+        # guests there are expired by Vercel Cron hitting the admin route
+        # instead of this background task.
+        if not settings.serverless:
+            cleaner = GuestCleaner(app.state.user_store, settings)
+            await cleaner.start()
+            stack.push_async_callback(cleaner.stop)
 
         app.state.db = db
         app.state.source = source

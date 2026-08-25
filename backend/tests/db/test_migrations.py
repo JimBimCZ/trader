@@ -153,3 +153,29 @@ class TestMigration002AddsIdentityColumns:
             "WHERE tablename = 'users_profile' AND schemaname = current_schema()"
         )
         assert "idx_users_kind_seen" in {row["indexname"] for row in rows}
+
+    async def test_last_seen_at_backfill_produces_a_real_timestamp(self, db):
+        """Regression for a silently no-opped backfill.
+
+        `last_seen_at` is `NOT NULL DEFAULT ''`, so a typo'd `WHERE` or `SET`
+        in the backfill statement would still satisfy NOT NULL and pass every
+        other test here -- '' is a valid non-null string. The guest cleaner
+        deletes rows where `last_seen_at < cutoff`, and an empty string sorts
+        before every ISO timestamp, so a no-opped backfill would make the
+        cleaner delete every pre-existing guest on its first run. This test
+        inserts a row simulating one that predates the column (relying on the
+        column's own default of ''), then asserts the backfill actually ran.
+        """
+        await db.execute(
+            "INSERT INTO users_profile (id, cash_balance, created_at) VALUES (?, ?, ?)",
+            ("predates-last-seen-at", 10000.0, "2020-06-15T12:00:00Z"),
+        )
+
+        await run_migrations(db)
+
+        row = await db.fetch_one(
+            "SELECT created_at, last_seen_at FROM users_profile WHERE id = ?",
+            ("predates-last-seen-at",),
+        )
+        assert row["last_seen_at"] != ""
+        assert row["last_seen_at"] == row["created_at"]

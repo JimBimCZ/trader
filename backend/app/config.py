@@ -86,6 +86,11 @@ class Settings:
     #: deleted, cascading away its watchlist, positions, trades, and chat.
     guest_ttl_days: int = 7
 
+    #: Guards POST/GET /api/admin/cleanup, which deletes idle guest accounts.
+    #: Unset, the endpoint refuses every call -- the safe default for a route
+    #: that deletes rows.
+    cleanup_secret: str = ""
+
     #: Minimum gap between `last_seen_at` writes for the same user, so an
     #: unthrottled hot path doesn't turn every GET into a Neon round trip.
     last_seen_throttle_seconds: float = 300.0
@@ -176,4 +181,5 @@ class Settings:
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
             session_secret=session_secret,
             guest_ttl_days=_env_int("GUEST_TTL_DAYS", 7) or 7,
+            cleanup_secret=os.environ.get("CLEANUP_SECRET", "").strip(),
         )

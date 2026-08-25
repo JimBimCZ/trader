@@ -140,3 +140,13 @@ class ConfigurationError(AppError):
     """The process cannot start with the configuration it was given."""
 
     status_code, code = 500, "CONFIGURATION_ERROR"
+
+
+class CleanupForbiddenError(AppError):
+    """The guest-cleanup route was called without a valid X-Cleanup-Secret.
+
+    Also what an unset `cleanup_secret` produces on every call -- the safe
+    default for an endpoint that deletes rows.
+    """
+
+    status_code, code = 403, "CLEANUP_FORBIDDEN"
