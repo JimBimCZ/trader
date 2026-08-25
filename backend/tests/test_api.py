@@ -160,3 +160,43 @@ class TestStaticServing:
 def test_every_get_route_answers(api_client, path):
     """Smoke check that no route is broken by wiring changes."""
     assert api_client.get(path).status_code == 200
+
+
+class TestExportedSubroutes:
+    """The static export emits a directory per route, not a bare file.
+
+    `next.config.ts` sets `trailingSlash: true`, so `/privacy/` is
+    `privacy/index.html` on disk. Serving those is what makes a second page
+    reachable on the container target at all -- Vercel's CDN resolves them
+    itself, so a miss here is invisible until someone runs the Docker image.
+    """
+
+    @pytest.fixture
+    def static_export(self, tmp_path, monkeypatch):
+        """A minimal export: an app shell and one exported subroute."""
+        (tmp_path / "index.html").write_text("<html>app shell</html>")
+        (tmp_path / "privacy").mkdir()
+        (tmp_path / "privacy" / "index.html").write_text("<html>privacy policy</html>")
+        monkeypatch.setattr("app.main.STATIC_DIR", tmp_path)
+        return tmp_path
+
+    def test_serves_a_directory_route_from_its_index(self, api_client, static_export):
+        """`/privacy/` must be the privacy page, not the app shell."""
+        response = api_client.get("/privacy/")
+        assert response.status_code == 200
+        assert "privacy policy" in response.text
+
+    def test_serves_the_same_route_without_its_trailing_slash(self, api_client, static_export):
+        """A hand-typed URL drops the slash; the link in the footer does not."""
+        assert "privacy policy" in api_client.get("/privacy").text
+
+    def test_an_unknown_route_still_falls_back_to_the_shell(self, api_client, static_export):
+        """Client-side routes have no directory, and must reach the SPA."""
+        assert "app shell" in api_client.get("/no/such/route").text
+
+    def test_a_directory_without_an_index_falls_back_to_the_shell(
+        self, api_client, static_export
+    ):
+        """A bare directory is not a page; only its index.html is."""
+        (static_export / "assets").mkdir()
+        assert "app shell" in api_client.get("/assets/").text
