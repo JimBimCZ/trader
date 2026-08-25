@@ -8,6 +8,8 @@ import { usePalette } from "@/lib/useTheme";
 import { palettes, type Palette } from "@/lib/theme";
 import { directionGlyph, formatSignedPercent } from "@/lib/format";
 import { CHART_MIN_H } from "../layout/panels";
+import { Skeleton } from "../ui/Skeleton";
+import { LoadFailure } from "../ui/LoadFailure";
 
 /**
  * Maps a position's return to a colour on the loss-neutral-profit scale.
@@ -97,6 +99,8 @@ function Cell({
 export function PortfolioHeatmap() {
   const palette = usePalette();
   const positions = usePortfolioStore((s) => s.positions);
+  const status = usePortfolioStore((s) => s.status);
+  const refresh = usePortfolioStore((s) => s.refresh);
   const livePrices = usePriceStore((s) => s.prices);
 
   // Weighted against invested value rather than the account total: cash has
@@ -124,7 +128,11 @@ export function PortfolioHeatmap() {
         <span>Allocation &amp; P&amp;L</span>
       </header>
       <div className="min-h-0 flex-1 p-2" data-testid="heatmap">
-        {data.length === 0 ? (
+        {status === "pending" ? (
+          <Skeleton className="h-full w-full rounded-[10px]" />
+        ) : status === "failed" ? (
+          <LoadFailure what="your positions" onRetry={refresh} className="h-full" />
+        ) : data.length === 0 ? (
           <p className="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
             Positions appear here, sized by weight and shaded by return.
           </p>

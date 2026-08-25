@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { executeTrade, fetchPortfolio, fetchPortfolioHistory } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { Portfolio, Position, SnapshotPoint } from "@/lib/types";
+import type { LoadState, Portfolio, Position, SnapshotPoint } from "@/lib/types";
 
 interface PortfolioState {
   cashBalance: number;
@@ -11,7 +11,11 @@ interface PortfolioState {
   totalValue: number;
   unrealizedPnl: number;
   history: SnapshotPoint[];
-  loaded: boolean;
+  status: LoadState;
+  /** Tracked separately: the history comes from its own endpoint, fetched by
+   *  PnlChart on mount rather than by the boot sequence, so `status` says
+   *  nothing about whether these points have arrived. */
+  historyStatus: LoadState;
   tradeError: string | null;
   tradePending: boolean;
   refresh: () => Promise<void>;
@@ -26,7 +30,7 @@ function applyPortfolio(portfolio: Portfolio) {
     positions: portfolio.positions,
     totalValue: portfolio.totalValue,
     unrealizedPnl: portfolio.unrealizedPnl,
-    loaded: true,
+    status: "ready" as LoadState,
   };
 }
 
@@ -36,33 +40,55 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   totalValue: 0,
   unrealizedPnl: 0,
   history: [],
-  loaded: false,
+  status: "pending" as LoadState,
+  historyStatus: "pending" as LoadState,
   tradeError: null,
   tradePending: false,
 
   refresh: async () => {
-    set(applyPortfolio(await fetchPortfolio()));
+    try {
+      set(applyPortfolio(await fetchPortfolio()));
+    } catch (error) {
+      set({ status: "failed" });
+      throw error;
+    }
   },
 
   refreshHistory: async () => {
-    set({ history: await fetchPortfolioHistory() });
+    try {
+      set({ history: await fetchPortfolioHistory(), historyStatus: "ready" });
+    } catch (error) {
+      set({ historyStatus: "failed" });
+      throw error;
+    }
   },
 
   trade: async (ticker, side, quantity) => {
     set({ tradePending: true, tradeError: null });
+
+    // Placing the order is the only step that can fail the trade.
     try {
       await executeTrade(ticker, side, quantity);
-      await get().refresh();
-      await get().refreshHistory();
-      return true;
     } catch (error) {
       const message =
         error instanceof ApiError ? error.message : "The trade could not be completed.";
-      set({ tradeError: message });
+      set({ tradeError: message, tradePending: false });
       return false;
-    } finally {
-      set({ tradePending: false });
     }
+
+    // From here the order has filled: the server has already moved the cash
+    // and the position. The two calls below only re-read that result, so
+    // their failure is a stale screen, not an undone trade -- and reporting
+    // it as a rejected order would be a lie about money that has already
+    // moved, inviting the user to place the same order twice.
+    //
+    // `allSettled` so a failed portfolio read still lets the history be
+    // fetched, and so neither rejection escapes: each call has already
+    // recorded its own outcome on the store, which is what the panels render
+    // -- with their own Retry.
+    await Promise.allSettled([get().refresh(), get().refreshHistory()]);
+    set({ tradePending: false });
+    return true;
   },
 
   clearTradeError: () => set({ tradeError: null }),

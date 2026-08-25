@@ -8,10 +8,14 @@ import { formatPrice, formatQuantity } from "@/lib/format";
 import { ChangeBadge } from "../ui/ChangeBadge";
 import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { SignedValue } from "../ui/SignedValue";
+import { SkeletonRow } from "../ui/Skeleton";
+import { LoadFailure } from "../ui/LoadFailure";
 import { PANELS } from "../layout/panels";
 
 export function PositionsTable() {
   const positions = usePortfolioStore((s) => s.positions);
+  const status = usePortfolioStore((s) => s.status);
+  const refresh = usePortfolioStore((s) => s.refresh);
   const watched = useWatchlistStore((s) => s.tickers);
   const select = useWatchlistStore((s) => s.select);
   const livePrices = usePriceStore((s) => s.prices);
@@ -25,11 +29,19 @@ export function PositionsTable() {
       <header className="card-title">
         <span>Positions</span>
         <span className="text-[11px] font-medium text-text-muted">
-          {positions.length} open
+          {status === "ready" ? `${positions.length} open` : "\u2014"}
         </span>
       </header>
 
-      {positions.length === 0 ? (
+      {status === "pending" ? (
+        <div className="py-1">
+          {Array.from({ length: 2 }, (_, i) => (
+            <SkeletonRow key={`skeleton-${i}`} />
+          ))}
+        </div>
+      ) : status === "failed" ? (
+        <LoadFailure what="your positions" onRetry={refresh} />
+      ) : positions.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-text-muted">
           No open positions. Buy a symbol to start building the portfolio.
         </p>

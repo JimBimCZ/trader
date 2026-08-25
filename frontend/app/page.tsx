@@ -56,15 +56,17 @@ export default function Page() {
   // free.
   useEffect(() => {
     if (sessionVersion === 0) return;
-    void refreshPortfolio();
-    void refreshWatchlist();
-    void refreshChat();
-    void loadSession();
+    void refreshPortfolio().catch(() => {});
+    void refreshWatchlist().catch(() => {});
+    void refreshChat().catch(() => {});
+    void loadSession().catch(() => {});
   }, [sessionVersion, refreshPortfolio, refreshWatchlist, refreshChat, loadSession]);
 
   // Positions change only on a trade, but their value moves with the market.
   useEffect(() => {
-    const timer = setInterval(refreshPortfolio, 15_000);
+    // A failed revaluation is already recorded on the store; the next tick
+    // retries it, so there is nothing here to handle.
+    const timer = setInterval(() => void refreshPortfolio().catch(() => {}), 15_000);
     return () => clearInterval(timer);
   }, [refreshPortfolio]);
 

@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/store/useSessionStore";
 import { SignInSheet } from "./SignInSheet";
+import { Skeleton } from "../ui/Skeleton";
 
 export function AccountMenu() {
   const session = useSessionStore((s) => s.session);
   const providers = useSessionStore((s) => s.providers);
+  const status = useSessionStore((s) => s.status);
   const signOut = useSessionStore((s) => s.signOut);
   const [open, setOpen] = useState(false);
   const [avatarBroken, setAvatarBroken] = useState(false);
@@ -36,7 +38,13 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  if (!session) return null;
+  // Three answers, not two. "Not asked yet" holds the control's space with a
+  // placeholder, so the toolbar does not jump when the session lands -- which
+  // is what returning null here used to cause. "Asked, and it failed" renders
+  // nothing: an account control that cannot say who you are has nothing to
+  // offer, and a placeholder for it would never resolve.
+  if (status === "failed") return null;
+  if (!session) return <Skeleton className="h-8 w-[104px] rounded-control" />;
 
   const signedIn = session.kind === "user";
   const label = signedIn ? (session.name ?? session.email ?? "Account") : "Sign in";

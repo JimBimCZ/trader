@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { BOOT_MIN_MS, useAppBoot } from "@/lib/useAppBoot";
+import { BOOT_MAX_MS, BOOT_MIN_MS, useAppBoot } from "@/lib/useAppBoot";
 import { useSessionStore } from "@/store/useSessionStore";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
@@ -118,4 +118,39 @@ it("runs the boot calls exactly once", async () => {
   rerender();
 
   expect(load).toHaveBeenCalledTimes(1);
+});
+
+it("lifts on the cap even while a call is still hanging", async () => {
+  // The failure this exists for: on Vercel a cold Neon instance let
+  // `GET /api/auth/me` hang until the platform killed the function at 60s.
+  // `allSettled` waits for every call, so the boot screen held for the whole
+  // minute. Nothing rejects here -- the promise simply never settles.
+  useSessionStore.setState({ load: () => new Promise<void>(() => {}) });
+  const { result } = renderHook(() => useAppBoot());
+
+  await act(async () => {
+    portfolio.resolve();
+    watchlist.resolve();
+    chat.resolve();
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(BOOT_MAX_MS);
+  });
+
+  await waitFor(() => expect(result.current).toBe(true));
+});
+
+it("does not wait for the cap when everything answers promptly", async () => {
+  const { result } = renderHook(() => useAppBoot());
+
+  await settleAll(() => {
+    session.resolve();
+    portfolio.resolve();
+    watchlist.resolve();
+    chat.resolve();
+  });
+
+  // Settled well inside the cap: the floor is what it waited on, not the cap.
+  await waitFor(() => expect(result.current).toBe(true));
+  expect(BOOT_MIN_MS).toBeLessThan(BOOT_MAX_MS);
 });

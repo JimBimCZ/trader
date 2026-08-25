@@ -2,11 +2,15 @@
 
 import { create } from "zustand";
 import { confirmClaim, fetchProviders, fetchSession, logout } from "@/lib/api/endpoints";
-import type { AuthProvider, Session } from "@/lib/types";
+import type { AuthProvider, LoadState, Session } from "@/lib/types";
 
 interface SessionState {
   session: Session | null;
   providers: AuthProvider[];
+  /** `session === null` cannot say whether we have not asked yet or asked and
+   *  failed, and the account control renders differently for each: a
+   *  placeholder holding its space, or nothing at all. */
+  status: LoadState;
   /**
    * Bumped whenever the cookie starts pointing at a different person. Every
    * other store keys its refetch off this: after a sign-out or a claim the
@@ -22,10 +26,19 @@ interface SessionState {
 export const useSessionStore = create<SessionState>()((set, get) => ({
   session: null,
   providers: [],
+  status: "pending" as LoadState,
   sessionVersion: 0,
 
   load: async () => {
-    const session = await fetchSession();
+    let session: Session;
+    try {
+      session = await fetchSession();
+    } catch (error) {
+      // Nothing retries this, so a status left at "pending" is a placeholder
+      // that never resolves -- the same trap the panels had.
+      set({ status: "failed" });
+      throw error;
+    }
     // A deployment with no OAuth credentials is the normal case rather than a
     // failure, so a providers call that goes wrong must not stop the session
     // from loading -- the app renders guest-only, which is correct anyway.
@@ -35,7 +48,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     } catch {
       providers = [];
     }
-    set({ session, providers });
+    set({ session, providers, status: "ready" });
   },
 
   signOut: async () => {

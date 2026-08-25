@@ -14,6 +14,18 @@ import { useChatStore } from "@/store/useChatStore";
 export const BOOT_MIN_MS = 350;
 
 /**
+ * How long the boot screen may hold, however slow the calls are.
+ *
+ * `allSettled` waits for every call, which is right when they answer and
+ * catastrophic when one does not: a cold Neon instance let `GET /api/auth/me`
+ * hang until Vercel killed the function at 60s, and the splash sat there for
+ * the whole minute. The cap trades a settled first paint for a bounded one:
+ * the workspace reveals whether or not every answer is in, and each panel
+ * shows what it has as its own call lands.
+ */
+export const BOOT_MAX_MS = 2_500;
+
+/**
  * Whether the app has enough to paint a settled first screen.
  *
  * The four calls here are the ones whose answers change what the first paint
@@ -41,13 +53,19 @@ export function useAppBoot(): boolean {
     let cancelled = false;
     const started = Date.now();
 
-    void Promise.allSettled([
-      loadSession(),
-      refreshPortfolio(),
-      refreshWatchlist(),
-      refreshChat(),
+    let cap: ReturnType<typeof setTimeout> | undefined;
+
+    // Whichever comes first. The losing promise is not cancelled: a slow call
+    // still resolves into its own store, and the panel showing a skeleton for
+    // it swaps in the real content whenever that happens.
+    void Promise.race([
+      Promise.allSettled([loadSession(), refreshPortfolio(), refreshWatchlist(), refreshChat()]),
+      new Promise((resolve) => {
+        cap = setTimeout(resolve, BOOT_MAX_MS);
+      }),
     ]).then(() => {
       if (cancelled) return;
+      clearTimeout(cap);
       timer = setTimeout(
         () => setBooted(true),
         Math.max(0, BOOT_MIN_MS - (Date.now() - started)),
@@ -57,6 +75,7 @@ export function useAppBoot(): boolean {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(cap);
     };
     // The store actions are stable for the life of the store, so this is a
     // mount-only effect; listing them would say otherwise.
