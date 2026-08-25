@@ -13,3 +13,7 @@ asyncpg>=0.30.0
 # app/identity/cookie.py, so its absence is not a degraded feature -- it is
 # every /api/* route returning 500 on a failed import of app.main.
 itsdangerous>=2.2.0
+# OAuth client. Imported at module scope by app/auth/providers.py, so the
+# function fails to import without it -- the failure mode that took every
+# /api/* route down on 2026-08-25.
+authlib>=1.3.0
