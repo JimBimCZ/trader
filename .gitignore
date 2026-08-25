@@ -233,3 +233,7 @@ test/.cache/
 
 # --- Playwright / E2E artifacts ---
 test/node_modules/
+
+# --- Vercel CLI ---
+.vercel
+.env.local
