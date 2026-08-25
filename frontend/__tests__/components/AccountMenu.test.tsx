@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AccountMenu } from "@/components/layout/AccountMenu";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -76,5 +76,23 @@ describe("as a signed-in user", () => {
     setSession({ kind: "user", email: "ada@example.com", name: null });
     render(<AccountMenu />);
     expect(screen.getByRole("button", { name: /ada@example.com/i })).toBeInTheDocument();
+  });
+
+  it("falls back to the monogram when the avatar fails to load", () => {
+    // A 404, a hotlink block, or an expired token all fail silently as far
+    // as React is concerned -- only the <img>'s own error event catches it.
+    setSession({
+      kind: "user",
+      email: "ada@example.com",
+      name: "Ada",
+      avatar: "https://example.com/broken.jpg",
+    });
+    render(<AccountMenu />);
+
+    const avatar = screen.getByTestId("account-avatar");
+    fireEvent.error(avatar);
+
+    expect(screen.queryByTestId("account-avatar")).not.toBeInTheDocument();
+    expect(screen.getByText("A", { selector: "span[aria-hidden]" })).toBeInTheDocument();
   });
 });

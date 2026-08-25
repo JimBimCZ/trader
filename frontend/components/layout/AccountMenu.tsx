@@ -9,7 +9,16 @@ export function AccountMenu() {
   const providers = useSessionStore((s) => s.providers);
   const signOut = useSessionStore((s) => s.signOut);
   const [open, setOpen] = useState(false);
+  const [avatarBroken, setAvatarBroken] = useState(false);
   const container = useRef<HTMLDivElement>(null);
+
+  // A 404, a hotlink block, or an expired token all fail silently as far as
+  // React is concerned -- only the <img>'s own error event catches it. Keyed
+  // on the URL so a sign-out into a different, working account doesn't keep
+  // showing the previous account's monogram fallback.
+  useEffect(() => {
+    setAvatarBroken(false);
+  }, [session?.avatar]);
 
   // Escape and outside-click close it, because a sheet that can only be
   // dismissed by the control that opened it traps keyboard users.
@@ -53,11 +62,17 @@ export function AccountMenu() {
         aria-expanded={open}
         className="flex h-8 items-center gap-2 rounded-control px-2.5 text-[13px] font-semibold text-text hover:bg-surface-sunk"
       >
-        {signedIn && session.avatar ? (
+        {signedIn && session.avatar && !avatarBroken ? (
           // A remote provider avatar; next/image needs a loader the static
           // export has no server to run.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={session.avatar} alt="" className="h-6 w-6 rounded-full" />
+          <img
+            src={session.avatar}
+            alt=""
+            data-testid="account-avatar"
+            className="h-6 w-6 rounded-full"
+            onError={() => setAvatarBroken(true)}
+          />
         ) : (
           <span
             aria-hidden
