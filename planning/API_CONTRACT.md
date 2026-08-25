@@ -167,11 +167,11 @@ The next request to any caller-resolving route mints a fresh guest.
 
 Request: `{"token": "<claim token from the callback redirect>"}`
 
-Response `200` on success, with `Set-Cookie: trader_session` naming the account the token pointed
-at — the same one offered in the callback's redirect, never a different one; there is nothing else
-in the body. A token that is expired, tampered with, already used, or not bound to the caller's
-current session → `CLAIM_TOKEN_INVALID` (400). Refusal leaves the caller's cookie exactly where it
-was, so nothing downstream is stale.
+Response `200`: `{"ok": true}` (matching `logout`), with `Set-Cookie: trader_session` naming the
+account the token pointed at — the same one offered in the callback's redirect, never a different
+one. A token that is expired, tampered with, already used, or not bound to the caller's current
+session → `CLAIM_TOKEN_INVALID` (400). Refusal leaves the caller's cookie exactly where it was, so
+nothing downstream is stale.
 
 ### `GET /api/auth/dev-login/{user_id}`
 

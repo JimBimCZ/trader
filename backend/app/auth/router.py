@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from ..deps import CurrentUserDep, clear_session_cookie, set_session_cookie
@@ -215,7 +215,19 @@ async def logout(response: Response) -> dict:
 
 @router.post("/claim")
 async def claim(body: ClaimRequest, request: Request) -> Response:
-    """Complete a contested sign-in the user has confirmed (§5.2)."""
+    """Complete a contested sign-in the user has confirmed (§5.2).
+
+    Returns a body -- `{"ok": True}`, matching `logout` -- rather than the
+    empty 200 this route used to send. An empty body isn't just an omission:
+    `fetch`'s `.json()` throws `SyntaxError` on it, and that throw lands
+    outside `client.ts`'s `!response.ok` branch, so it was never wrapped as
+    an `ApiError`. It surfaced as a raw parse error after the cookie had
+    already moved to the target account -- the claim had, in fact, already
+    succeeded -- and offered a retry that could only fail a second time,
+    because the token is single-use and now bound to an account the caller
+    has already left. Every other route in this app returns a dict; this one
+    only looked like it was following the pattern.
+    """
     session = await _session_user(request)
     if session is None:
         raise ClaimTokenInvalidError("That confirmation is no longer valid.")
@@ -224,7 +236,7 @@ async def claim(body: ClaimRequest, request: Request) -> Response:
     if target_id is None:
         raise ClaimTokenInvalidError("That confirmation is no longer valid.")
 
-    response = Response(status_code=200)
+    response = JSONResponse({"ok": True})
     set_session_cookie(request, response, request.app.state.session_cookie, target_id)
     return response
 

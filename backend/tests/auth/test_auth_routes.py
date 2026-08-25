@@ -135,7 +135,14 @@ class TestCallback:
         assert auth_client.get("/api/auth/me").json()["id"] == contested["id"]
 
         token = response.headers["location"].split("token=")[1]
-        assert auth_client.post("/api/auth/claim", json={"token": token}).status_code == 200
+        claim_response = auth_client.post("/api/auth/claim", json={"token": token})
+        assert claim_response.status_code == 200
+        # A body, not just a status code: an empty 200 here is what let a
+        # `SyntaxError` from `response.json()` reach the frontend as an
+        # unhandled failure on every successful claim, even though the
+        # cookie had already moved. See test_client.test.ts for the layer
+        # that exercises the real fetch/json path this regressed in.
+        assert claim_response.json() == {"ok": True}
         assert auth_client.get("/api/auth/me").json()["id"] == signed_in["id"]
 
 
