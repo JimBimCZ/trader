@@ -197,6 +197,15 @@ async def create_seeded_user(db: Database, settings: Settings, user_id: str) -> 
 
 
 @pytest_asyncio.fixture
+async def seeded_user_id(db, settings) -> str:
+    """A real users_profile row, for tests that need a foreign key to satisfy."""
+    from app.identity import UserStore
+
+    user = await UserStore(db, settings).mint_guest()
+    return user.id
+
+
+@pytest_asyncio.fixture
 async def seeded_db(db: Database, settings: Settings):
     """An initialized, migrated database holding one seeded `TEST_USER_ID`.
 

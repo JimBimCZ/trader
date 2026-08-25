@@ -67,7 +67,7 @@ class TestConcurrentStartupIsSerialized:
                     "JOIN pg_namespace n ON n.oid = c.connamespace "
                     "WHERE c.contype = 'f' AND n.nspname = current_schema()"
                 )
-                assert constraints["n"] == 5
+                assert constraints["n"] == 6
 
                 await create_seeded_user(admin, settings, "alice")
                 watchlist = await admin.fetch_one("SELECT COUNT(*) AS n FROM watchlist")

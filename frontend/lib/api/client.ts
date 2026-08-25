@@ -40,7 +40,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(code, message, response.status);
   }
 
-  return (await response.json()) as T;
+  // A successful response with no body (an empty string, not malformed JSON)
+  // is a real shape a route can send -- and `.json()` throws a raw
+  // `SyntaxError` on it that this function's own error handling above never
+  // sees, because it happens after the `!response.ok` branch. Reading the
+  // text first and only parsing when there is any lets that case return
+  // `undefined` instead of throwing. A non-empty body that fails to parse
+  // still throws -- that's a real bug in a response, not an empty one, and
+  // hiding it here would be worse than the exception.
+  const text = await response.text();
+  return (text === "" ? undefined : JSON.parse(text)) as T;
 }
 
 export const api = {

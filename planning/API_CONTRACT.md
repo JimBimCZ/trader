@@ -18,10 +18,11 @@ Conventions:
 
 ## 0. Identity — the `trader_session` cookie
 
-There is no sign-in yet. Every request that reaches a route other than the ones named below resolves
-a caller from a signed cookie, minting a fresh guest the first time a browser arrives without one
-(or with one that no longer verifies — see below). Nothing about this is visible in a request or
-response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
+*Corrected 2026-08-25.* Sign-in exists and is optional — see §0.1. What follows describes what
+happens to every request regardless of whether the caller ever signs in: a route other than the
+ones named below resolves a caller from a signed cookie, minting a fresh guest the first time a
+browser arrives without one (or with one that no longer verifies — see below). Nothing about this
+is visible in a request or response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
 
 | Attribute | Value |
 |---|---|
@@ -59,7 +60,130 @@ browser nothing about it, so the retry created another.
 `GET /{path}` that serves the static frontend. The first two are read-only against shared,
 non-user-scoped state (process health; the shared price cache); the cleanup route is authorized by
 a shared secret rather than by a user and deletes rows on a scheduler's behalf; the catch-all
-serves files. None of them needs — or creates — a user.
+serves files. None of them needs — or creates — a user. (Six more routes never *mint* a guest
+either, but do read or write the cookie directly rather than never touching it at all — see §0.1's
+opening paragraph for that distinction.)
+
+---
+
+## 0.1 Sign-in — OAuth routes
+
+*Added 2026-08-25. Optional and additive: with no `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` configured, `GET /api/auth/providers` reports an empty
+list, the frontend renders no sign-in control at all (`AccountMenu`), and everything above in §0
+is unchanged. See `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` §5 for the
+full design and §5.1 for the decision matrix these routes carry out.*
+
+**Only `GET /api/auth/me` resolves — and, when there is none, mints — a caller.** It uses the same
+`CurrentUserDep` as every other user-scoped route, so it re-issues the cookie on every response
+exactly as §0 describes, and it is the call the frontend's session store makes on mount — which is
+where a first-time visitor's guest account actually comes from, not the SPA catch-all. Every other
+route below reads `trader_session` itself, when it needs to, and writes it at most once on the
+response it returns; none of them carries `CurrentUserDep`. That is deliberate: a callback that
+depended on it would emit two competing `Set-Cookie: trader_session` headers on the same response —
+one for the guest that was there, one for the account the callback resolved to — and leave the
+browser to pick one arbitrarily.
+
+### `GET /api/auth/providers`
+
+Does **not** resolve or mint a caller — this is the one read a page can make before anyone has a
+session at all.
+
+```json
+{"providers": [{"name": "google", "label": "Google"}, {"name": "github", "label": "GitHub"}]}
+```
+
+Only providers with both halves of their credential pair configured appear, in this fixed order
+(Google, then GitHub) regardless of which was configured first.
+
+### `GET /api/auth/login/{provider}`
+
+Redirects (302, via Authlib) the browser to the provider's own consent screen. A full-page
+navigation, not a fetch — a JSON response here would put the provider's login page inside an XHR,
+which is not renderable. `provider` not in `{google, github}`, or configured with no credentials on
+this deployment, → `AUTH_PROVIDER_UNAVAILABLE` (404): the route genuinely does not exist here, which
+lets the frontend simply not render a button for it rather than render one that dead-ends.
+
+### `GET /api/auth/callback/{provider}`
+
+Where the provider sends the browser back. Trades the code for a token, reduces the provider's
+answer to a profile (`sub`/`id`, email, name, avatar), looks up whether that `(provider,
+provider_user_id)` pair is already linked to an account, and carries out exactly one of four
+outcomes:
+
+| Outcome | When | Result |
+|---|---|---|
+| **Promote** | Identity is new; caller already holds a session | That row is attached to the identity and marked a signed-in user. Same id, so the portfolio carries over. |
+| **Create** | Identity is new; caller holds no session | A fresh seeded account is created and the identity attached to it. |
+| **Switch** | Identity is already linked; caller's current guest has no real activity to lose | The cookie moves to point at the account that owns the identity. The caller's previous guest row, if any, is left alone and expires on its own idle timer. |
+| **Conflict** | Identity is already linked; caller is a guest with real activity (D-2) | Nothing is written yet. See below. |
+
+Promote/Create/Switch all end the same way: `307` to `/`, with exactly one
+`Set-Cookie: trader_session` naming the resulting account. Conflict responds `307` to
+`/?claim=conflict&token=<token>` with **no** `Set-Cookie` at all — the guest keeps its session,
+untouched, until it confirms via `POST /api/auth/claim`. `token` is short-lived, single-use, and
+bound to the session that received it (`app/auth/claim.py`); the frontend's `ClaimConflictDialog`
+reads it from the query string and shows: *"That account already has a portfolio. Signing in opens
+the portfolio that already belongs to this account. Your current guest activity will be discarded
+and cannot be recovered."*
+
+Identities are matched by `(provider, provider_user_id)` **only, never by email** (D-6). This is
+deliberate, not an oversight: a provider does not always guarantee its email address is verified,
+and matching two different providers' identities because they happen to report the same address is
+an account-takeover vector — anyone who can get that address accepted by either provider's signup
+flow could walk into an account they do not own. The cost is that the same person signing in first
+with Google and later with GitHub, using the same address, ends up with two accounts rather than
+one merged account; that is the accepted trade-off, not a bug to be fixed with an email fallback.
+
+Errors: a state/PKCE mismatch (a bookmarked callback URL, a back button, a sign-in begun before a
+redeploy rotated the secret) → `AUTH_STATE_INVALID` (400), ordinary rather than sinister. Any other
+failure trading the code or fetching the profile → `AUTH_EXCHANGE_FAILED` (502).
+
+### `GET /api/auth/me`
+
+```json
+{
+  "id": "3f2a1c9e-...",
+  "kind": "guest",
+  "email": null,
+  "name": null,
+  "avatar": null,
+  "hasActivity": false
+}
+```
+
+`kind` is `"guest"` or `"user"` — a user has at least one linked OAuth identity and never expires;
+a guest expires after `GUEST_TTL_DAYS` idle. `hasActivity` is whether this guest has done anything
+beyond the seeded starting state (a trade, a watchlist edit, a chat message) — it drives both the
+"sign in to keep this portfolio" hint copy and, indirectly, whether a future sign-in on this
+session could ever produce a claim conflict.
+
+### `POST /api/auth/logout`
+
+No request body. Response `200`: `{"ok": true}`. Clears the session cookie; it sets nothing new.
+The next request to any caller-resolving route mints a fresh guest.
+
+### `POST /api/auth/claim`
+
+Request: `{"token": "<claim token from the callback redirect>"}`
+
+Response `200`: `{"ok": true}` (matching `logout`), with `Set-Cookie: trader_session` naming the
+account the token pointed at — the same one offered in the callback's redirect, never a different
+one. A token that is expired, tampered with, already used, or not bound to the caller's current
+session → `CLAIM_TOKEN_INVALID` (400). Refusal leaves the caller's cookie exactly where it was, so
+nothing downstream is stale.
+
+### `GET /api/auth/dev-login/{user_id}`
+
+E2E only. Signs a session cookie for `user_id` with no provider involved at all — unauthenticated
+session forgery, by design: anyone who can reach it becomes any user by guessing an id. Answers
+`AUTH_PROVIDER_UNAVAILABLE` (404), not 403, when `AUTH_MOCK` is unset (the default and what every
+non-test deployment should run with), so a deployment that has it switched off does not even
+reveal that the route exists. **The same code and status also answer a `user_id` that does not
+exist** ("No such user.") when `AUTH_MOCK=true` — the two 404s are indistinguishable on the wire,
+so a bad id and a switched-off route look identical to a caller debugging one. On success: `307`
+to `/` with the cookie set. `AUTH_MOCK=true` is what `test/docker-compose.test.yml` sets for the
+E2E suite; it is never set in `docker-compose.yml` or on Vercel.
 
 ---
 
@@ -87,6 +211,10 @@ safe to display verbatim. No other top-level keys.
 | `VALUATION_UNAVAILABLE` | 500 | A held position has no cached price, so the portfolio cannot be valued |
 | `MARKET_CAPACITY_FULL` | 503 | The *global* tracked-ticker set (across every user, `market_capacity`, default 100) is full. Distinct from `WATCHLIST_FULL`: this can fire for a caller whose own watchlist holds three tickers, because the deployment as a whole is already tracking its cap. |
 | `CLEANUP_FORBIDDEN` | 403 | `POST`/`GET /api/admin/cleanup` called without a valid secret in either `X-Cleanup-Secret` or `Authorization: Bearer`, or no secret is configured at all |
+| `AUTH_PROVIDER_UNAVAILABLE` | 404 | `{provider}` in `/api/auth/login/{provider}` or `/api/auth/callback/{provider}` is not `google`/`github`, or this deployment has no credentials for it; also what `/api/auth/dev-login/{user_id}` answers when `AUTH_MOCK` is unset |
+| `AUTH_STATE_INVALID` | 400 | The OAuth callback's state or PKCE verifier did not match — a bookmarked callback URL, a back button, or a secret rotated mid-flow, not an outage |
+| `AUTH_EXCHANGE_FAILED` | 502 | The provider refused the code exchange or the userinfo/profile request |
+| `CLAIM_TOKEN_INVALID` | 400 | `POST /api/auth/claim`'s token is expired, tampered with, already used, or not bound to the caller's current session |
 | `INTERNAL_ERROR` | 500 | Unexpected failure; details are logged, never returned |
 
 `POST /api/chat` is the one endpoint that does **not** use this envelope for upstream LLM failures —

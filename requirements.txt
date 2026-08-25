@@ -13,3 +13,18 @@ asyncpg>=0.30.0
 # app/identity/cookie.py, so its absence is not a degraded feature -- it is
 # every /api/* route returning 500 on a failed import of app.main.
 itsdangerous>=2.2.0
+# OAuth client. Imported at module scope by app/auth/providers.py, so the
+# function fails to import without it -- the failure mode that took every
+# /api/* route down on 2026-08-25.
+authlib>=1.3.0
+# authlib's own Starlette integration imports httpx at module scope, but
+# authlib does not declare it as a dependency (its metadata lists only
+# cryptography and joserfc) -- so without this line the function fails to
+# import on Vercel even though authlib installs cleanly, the same failure
+# mode as the entry above one level removed. Docker never surfaces this
+# because litellm pulls httpx in anyway.
+httpx>=0.27.0
+# Parks the OAuth PKCE verifier/state in a signed cookie (SessionMiddleware),
+# imported at module scope by app/main.py. Already pulled in transitively by
+# fastapi, but declared explicitly since this app imports it directly.
+starlette>=0.40.0

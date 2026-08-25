@@ -27,6 +27,8 @@ function pairings({ colors: c }: Palette): [string, string, string][] {
     ["muted label on card", c.textMuted, c.surface],
     ["muted label on canvas", c.textMuted, c.bg],
     ["muted label on a field", c.textMuted, c.surfaceSunk],
+    ["guest hint on material", c.textMuted, c.material],
+    ["sign-in sheet secondary line on material", c.textMuted, c.material],
     ["gain on card", c.upText, c.surface],
     ["gain in its pill", c.upText, c.upWash],
     ["loss on card", c.downText, c.surface],

@@ -7,8 +7,10 @@ import { useTheme } from "@/lib/useTheme";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { useChatStore } from "@/store/useChatStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import { Header } from "@/components/layout/Header";
 import { Rail } from "@/components/layout/Rail";
+import { ClaimConflictDialog } from "@/components/layout/ClaimConflictDialog";
 import { CHART_MIN_H, PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
 import { PositionsTable } from "@/components/portfolio/PositionsTable";
@@ -43,11 +45,30 @@ export default function Page() {
   const refreshPortfolio = usePortfolioStore((s) => s.refresh);
   const refreshChat = useChatStore((s) => s.refresh);
 
+  const sessionVersion = useSessionStore((s) => s.sessionVersion);
+  const loadSession = useSessionStore((s) => s.load);
+
   useEffect(() => {
     refreshWatchlist();
     refreshPortfolio();
     refreshChat();
   }, [refreshWatchlist, refreshPortfolio, refreshChat]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  // The cookie now points at a different person, so everything on screen
+  // belongs to the previous one. Keyed off the counter rather than chained
+  // onto sign-out, so any future path that changes identity gets this for
+  // free.
+  useEffect(() => {
+    if (sessionVersion === 0) return;
+    void refreshPortfolio();
+    void refreshWatchlist();
+    void refreshChat();
+    void loadSession();
+  }, [sessionVersion, refreshPortfolio, refreshWatchlist, refreshChat, loadSession]);
 
   // Positions change only on a trade, but their value moves with the market.
   useEffect(() => {
@@ -59,6 +80,7 @@ export default function Page() {
     // Below `lg` the fixed viewport split inverts to a page that scrolls as a
     // whole, because four panels in one viewport leaves each too short to read.
     <div className="flex min-h-screen flex-col gap-3 p-3 lg:h-screen lg:flex-row">
+      <ClaimConflictDialog />
       <Rail />
 
       <div className="flex min-w-0 flex-1 flex-col gap-3 lg:min-h-0">

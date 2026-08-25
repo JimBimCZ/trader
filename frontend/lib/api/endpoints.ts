@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type {
+  AuthProvider,
   ChatMessage,
   ChatReply,
   ExecutedAction,
@@ -7,6 +8,7 @@ import type {
   Portfolio,
   Position,
   RawPosition,
+  Session,
   SnapshotPoint,
 } from "../types";
 
@@ -107,4 +109,21 @@ export async function sendChatMessage(message: string): Promise<ChatReply> {
 
 export async function resetAll(): Promise<void> {
   await api.post("/api/reset");
+}
+
+export async function fetchSession(): Promise<Session> {
+  return api.get<Session>("/api/auth/me");
+}
+
+export async function fetchProviders(): Promise<AuthProvider[]> {
+  const body = await api.get<{ providers: AuthProvider[] }>("/api/auth/providers");
+  return body.providers;
+}
+
+export async function logout(): Promise<void> {
+  await api.post<{ ok: boolean }>("/api/auth/logout");
+}
+
+export async function confirmClaim(token: string): Promise<void> {
+  await api.post<unknown>("/api/auth/claim", { token });
 }

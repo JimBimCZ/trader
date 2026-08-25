@@ -40,6 +40,12 @@ services:
       SIM_VOL_MULTIPLIER: "50"
       OPENROUTER_API_KEY: "not-used-in-mock-mode"
       DATABASE_URL: "postgresql://trader:trader@postgres:5432/trader"
+      # Enables GET /api/auth/dev-login/{user_id}, which auth.spec.ts uses to
+      # move a session to a known user with no real OAuth provider involved.
+      # No GOOGLE_*/GITHUB_* credentials are set here, which is deliberate:
+      # this is also the quick start's configuration, so the suite exercises
+      # the zero-config "no sign-in control rendered" path for real.
+      AUTH_MOCK: "true"
     depends_on:
       postgres:
         condition: service_healthy

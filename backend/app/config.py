@@ -115,6 +115,25 @@ class Settings:
     chat_history_char_budget: int = 8000
     llm_timeout_seconds: float = 30.0
 
+    #: OAuth client credentials. A provider with either half missing is not
+    #: offered at all -- see `configured_providers`. Absent entirely is the
+    #: default and keeps the quick start zero-config.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+
+    #: Base URL the browser reaches us on, used to build the OAuth callback.
+    #: Empty means "derive it from the request". Set it explicitly wherever a
+    #: proxy rewrites the host: a wrong callback URL is rejected by the
+    #: provider with an error that names neither the cause nor this setting.
+    public_base_url: str = ""
+
+    #: Enables /api/auth/dev-login/{user_id}, which signs a session cookie for
+    #: an arbitrary user with no provider involved. E2E only. Refused unless
+    #: this is true, because it is an unauthenticated session-forgery route.
+    auth_mock: bool = False
+
     @property
     def sim_tick_seconds(self) -> float:
         return self.sim_tick_ms / 1000.0
@@ -124,6 +143,19 @@ class Settings:
         if self.massive_api_key.strip():
             return "massive"
         return self.market_source or "simulator"
+
+    @property
+    def configured_providers(self) -> tuple[str, ...]:
+        """Providers with both halves of their credentials, in display order.
+
+        A tuple rather than a set: the sign-in sheet renders them in this
+        order, and a set would reshuffle it between deployments.
+        """
+        pairs = (
+            ("google", self.google_client_id, self.google_client_secret),
+            ("github", self.github_client_id, self.github_client_secret),
+        )
+        return tuple(name for name, id_, secret in pairs if id_.strip() and secret.strip())
 
     @property
     def serverless(self) -> bool:
@@ -198,4 +230,10 @@ class Settings:
                 os.environ.get("CLEANUP_SECRET", "").strip()
                 or os.environ.get("CRON_SECRET", "").strip()
             ),
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+            google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+            github_client_id=os.getenv("GITHUB_CLIENT_ID", ""),
+            github_client_secret=os.getenv("GITHUB_CLIENT_SECRET", ""),
+            public_base_url=os.getenv("PUBLIC_BASE_URL", ""),
+            auth_mock=os.getenv("AUTH_MOCK", "").lower() == "true",
         )

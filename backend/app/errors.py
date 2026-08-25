@@ -171,3 +171,36 @@ class CleanupForbiddenError(AppError):
     """
 
     status_code, code = 403, "CLEANUP_FORBIDDEN"
+
+
+class AuthProviderUnavailableError(AppError):
+    """A provider that is not configured on this deployment.
+
+    404 rather than 400: the route genuinely does not exist here, and saying
+    so lets the frontend hide a button it cannot fulfil rather than render one
+    that dead-ends.
+    """
+
+    status_code, code = 404, "AUTH_PROVIDER_UNAVAILABLE"
+
+
+class AuthStateInvalidError(AppError):
+    """The callback's state or PKCE verifier did not match the cookie.
+
+    Ordinary rather than sinister: a bookmarked callback URL, a back button,
+    or a sign-in begun before a redeploy rotated the secret all land here.
+    """
+
+    status_code, code = 400, "AUTH_STATE_INVALID"
+
+
+class AuthExchangeFailedError(AppError):
+    """The provider refused the code exchange or the userinfo request."""
+
+    status_code, code = 502, "AUTH_EXCHANGE_FAILED"
+
+
+class ClaimTokenInvalidError(AppError):
+    """A claim token that is expired, tampered with, or not this session's."""
+
+    status_code, code = 400, "CLAIM_TOKEN_INVALID"

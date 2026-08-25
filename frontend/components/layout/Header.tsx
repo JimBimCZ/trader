@@ -9,6 +9,7 @@ import { formatPrice, formatSignedPercent } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { AccountMenu } from "./AccountMenu";
 
 /**
  * The unified toolbar. Chrome rather than a card, so it takes the same
@@ -90,6 +91,7 @@ export function Header() {
       <div className="flex shrink-0 items-center gap-2.5">
         <ConnectionStatusDot />
         <ThemeToggle />
+        <AccountMenu />
       </div>
     </header>
   );

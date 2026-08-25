@@ -17,7 +17,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from starlette.middleware.sessions import SessionMiddleware
 
+from .auth import build_oauth
+from .auth import router as auth_module
+from .auth.claim import ClaimToken
 from .config import Settings
 from .db import init_db, open_database, run_migrations
 from .errors import FrontendNotBuiltError, RouteNotFoundError, register_exception_handlers
@@ -185,10 +189,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # the tickers it should answer for.
     app.state.price_cache = create_price_cache(resolved)
 
+    # Authlib parks the PKCE verifier and the state here. It must be a cookie
+    # rather than process memory: serverless instances share nothing, so an
+    # in-memory store fails intermittently and unreproducibly -- the worst
+    # possible failure mode for a login button.
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=resolved.session_secret,
+        session_cookie="trader_oauth",
+        max_age=600,
+        same_site="lax",
+        https_only=False,
+    )
+
+    app.state.oauth = build_oauth(resolved)
+    app.state.claim_token = ClaimToken(resolved.session_secret)
+
     register_exception_handlers(app)
 
     # API routes first: the SPA fallback below matches everything, so any
     # route registered after it would be unreachable.
+    app.include_router(auth_module.router)
     app.include_router(portfolio_module.router)
     app.include_router(watchlist_module.router)
     app.include_router(history_module.router)

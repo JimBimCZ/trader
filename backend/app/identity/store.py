@@ -11,10 +11,12 @@ from datetime import datetime
 
 from ..clock import utcnow_iso
 from ..config import Settings
-from ..db import Database, seed_user
+from ..db import DEFAULT_WATCHLIST, Database, seed_user
 from .models import User
 
 logger = logging.getLogger(__name__)
+
+_USER_COLUMNS = "id, cash_balance, kind, created_at, last_seen_at, email, display_name, avatar_url"
 
 
 def _to_user(row) -> User:
@@ -24,6 +26,9 @@ def _to_user(row) -> User:
         kind=row["kind"],
         created_at=row["created_at"],
         last_seen_at=row["last_seen_at"],
+        email=row["email"],
+        display_name=row["display_name"],
+        avatar_url=row["avatar_url"],
     )
 
 
@@ -36,8 +41,7 @@ class UserStore:
 
     async def get(self, user_id: str) -> User | None:
         row = await self._db.fetch_one(
-            "SELECT id, cash_balance, kind, created_at, last_seen_at "
-            "FROM users_profile WHERE id = ?",
+            f"SELECT {_USER_COLUMNS} FROM users_profile WHERE id = ?",
             (user_id,),
         )
         return _to_user(row) if row is not None else None
@@ -99,6 +103,97 @@ class UserStore:
         if rows:
             logger.info("Deleted %d expired guests", len(rows))
         return len(rows)
+
+    async def lookup_identity(self, provider: str, subject: str) -> str | None:
+        """The user a provider identity belongs to, or None if it is new.
+
+        The pair is the whole key. Matching on email instead -- or as a
+        fallback -- is an account-takeover vector wherever a provider does not
+        guarantee the address is verified (D-6).
+        """
+        row = await self._db.fetch_one(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND provider_user_id = ?",
+            (provider, subject),
+        )
+        return row["user_id"] if row else None
+
+    async def attach_identity(
+        self, user_id: str, provider: str, subject: str, email: str | None
+    ) -> None:
+        """Link a provider identity to a row.
+
+        ON CONFLICT DO NOTHING rather than an upsert: the pair is already the
+        primary key, so a conflict means this identity is linked, and the only
+        row it could be linked to is the one the caller just resolved.
+        """
+        await self._db.execute(
+            "INSERT INTO oauth_identities (provider, provider_user_id, user_id, email, "
+            "created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (provider, provider_user_id) DO NOTHING",
+            (provider, subject, user_id, email, utcnow_iso()),
+        )
+
+    async def promote(
+        self, user_id: str, email: str | None, name: str | None, avatar: str | None
+    ) -> User:
+        """Turn a guest row into a signed-in user, in place.
+
+        In place is the whole point: the id does not change, so the cookie
+        already in the browser stays valid and every watchlist row, position,
+        trade and message follows the user across without being touched.
+
+        COALESCE keeps a previously stored value when a provider returns null
+        for a field -- signing in with GitHub after Google should not blank an
+        avatar GitHub happens not to expose.
+        """
+        await self._db.execute(
+            "UPDATE users_profile SET kind = 'user', email = COALESCE(?, email), "
+            "display_name = COALESCE(?, display_name), avatar_url = COALESCE(?, avatar_url) "
+            "WHERE id = ?",
+            (email, name, avatar, user_id),
+        )
+        user = await self.get(user_id)
+        if user is None:  # pragma: no cover -- the caller just resolved this row
+            raise LookupError(f"Promoted a user that does not exist: {user_id}")
+        return user
+
+    async def has_activity(self, user_id: str) -> bool:
+        """Whether this user has done anything worth warning about losing.
+
+        Three signals, per the spec: any trade, any chat message, or a
+        watchlist that differs from the seeded ten. The watchlist is compared
+        by count *and* by membership, because a removal followed by an
+        addition leaves the count untouched while the list is no longer the
+        one we seeded.
+
+        The common case is an untouched guest, which must not produce a
+        prompt -- a warning that fires on every sign-in trains people to
+        dismiss it, and the one time it matters they will.
+
+        The unseeded-ticker count binds the default list as a Postgres array
+        and checks membership with `<> ALL(...)`, rather than a `NOT IN`
+        built from generated placeholders -- confirmed working against
+        asyncpg through this wrapper's `?`-rewriting.
+        """
+        row = await self._db.fetch_one(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM trades WHERE user_id = ?)        AS trades,
+                (SELECT COUNT(*) FROM chat_messages WHERE user_id = ?) AS messages,
+                (SELECT COUNT(*) FROM watchlist WHERE user_id = ?)     AS watched,
+                (SELECT COUNT(*) FROM watchlist WHERE user_id = ? AND ticker <> ALL(?))
+                                                                       AS unseeded
+            """,
+            (user_id, user_id, user_id, user_id, list(DEFAULT_WATCHLIST)),
+        )
+        if row is None:  # pragma: no cover
+            return False
+        return bool(
+            row["trades"]
+            or row["messages"]
+            or row["unseeded"]
+            or row["watched"] != len(DEFAULT_WATCHLIST)
+        )
 
 
 def _seconds_between(earlier_iso: str, later_iso: str) -> float:

@@ -167,6 +167,9 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
 | `GUEST_TTL_DAYS` | dashboard (optional) | Days of inactivity before a guest is deleted (default 7). Read by the Cron-driven cleanup route, same as on the container target. |
 | `CRON_SECRET` | dashboard | Vercel's own convention: setting this auto-attaches `Authorization: Bearer $CRON_SECRET` to every Cron invocation, which the cleanup route accepts directly. **This is the one to set on this target** — it needs no other configuration for the scheduled hit in `vercel.json` to authenticate. |
 | `CLEANUP_SECRET` | dashboard (optional) | Guards the same route via `X-Cleanup-Secret` instead, for a manual/curl call. Falls back to `CRON_SECRET` when unset (`app/config.py`), so setting `CRON_SECRET` alone is sufficient on Vercel — this variable is only needed to give a human caller a different secret than the Cron one. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | dashboard (optional) | Enables Google sign-in. Both halves are required — one without the other is treated as unconfigured, and Google is simply not offered. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | dashboard (optional) | Enables GitHub sign-in. Same both-halves rule as Google. |
+| `PUBLIC_BASE_URL` | dashboard (optional but effectively required if any provider is set) | The production domain, e.g. `https://<app>.vercel.app`, used to build the OAuth callback URL. Vercel's edge rewrites make the request's own origin unreliable for this; without it the app derives a callback URL the provider will reject with an error that names neither the cause nor this setting. |
 
 ### Finishing the setup
 
@@ -183,13 +186,38 @@ api/index.py       puts backend/ on the import path and exposes app.main:app
    are never expired. Both are ordinary dashboard environment variables — no other configuration
    is needed for either to take effect.
 
+### Sign-in (optional)
+
+*Added 2026-08-25.* Sign-in is additive on this target exactly as it is on Docker (see
+`planning/PLAN.md` §2 and `planning/API_CONTRACT.md` §0.1) — nothing below is required to deploy.
+
+1. **Register the callback URL with each provider** you want to offer, using the production
+   domain in `PUBLIC_BASE_URL`:
+   - Google: `<PUBLIC_BASE_URL>/api/auth/callback/google`
+   - GitHub: `<PUBLIC_BASE_URL>/api/auth/callback/github`
+2. **Set the four credential variables and `PUBLIC_BASE_URL`** in the dashboard (table above), then
+   redeploy.
+3. **Do not set `AUTH_MOCK`.** It enables `GET /api/auth/dev-login/{user_id}`, unauthenticated
+   session forgery meant only for the local E2E suite (`test/docker-compose.test.yml`); it has no
+   legitimate use on a reachable deployment.
+
+**Preview deployments cannot exercise the real round trip.** Vercel gates preview deployments
+behind Vercel Authentication on this plan, so a provider's callback lands on an SSO wall before it
+reaches the app. Sign-in is verifiable in two places only: locally with Docker and real
+credentials, and on the production deployment once `PUBLIC_BASE_URL` and the provider secrets are
+set. A preview verifies everything about this feature except the actual redirect through Google or
+GitHub.
+
 ### Access and cost
 
 The production domain is public: Vercel Authentication cannot cover it on the Hobby plan, which
 refuses `ssoProtection` for production outright. Preview deployments and production *deployment*
-URLs are gated by it; the production domain is not, and password protection is paid too. The app
-has no sign-in of its own, so anyone with the URL is minted their own anonymous guest and can trade
-that guest's imaginary money — isolated from every other guest's, but not gated behind anything.
+URLs are gated by it; the production domain is not, and password protection is paid too. Anyone
+with the URL is minted their own anonymous guest and can trade that guest's imaginary money —
+isolated from every other guest's, but not gated behind anything. Sign-in (above) does not change
+this: it is optional, attaches a guest's own portfolio to an account so it survives a change of
+browser, and adds no access control of its own — anyone can still reach the app and start as a
+guest whether or not OAuth credentials are configured.
 
 The cost that matters is the price stream. An open tab holds an SSE connection, and streaming is
 billed for its whole duration — `STREAM_MAX_SECONDS` closes it at 55 s but `EventSource`

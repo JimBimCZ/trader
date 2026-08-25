@@ -69,6 +69,26 @@ MIGRATIONS: list[str] = [
     # last_seen_at is a real timestamp everywhere before anything reads it.
     "UPDATE users_profile SET last_seen_at = created_at WHERE last_seen_at = ''",
     "CREATE INDEX IF NOT EXISTS idx_users_kind_seen ON users_profile (kind, last_seen_at)",
+    # 003 -- identity. The profile columns are display data only; nothing
+    # resolves an account by email (D-6). oauth_identities is created here as
+    # well as in schema.py because Neon already has the database, so
+    # schema.py's CREATE TABLE IF NOT EXISTS never runs against it.
+    "ALTER TABLE users_profile ADD COLUMN IF NOT EXISTS email TEXT",
+    "ALTER TABLE users_profile ADD COLUMN IF NOT EXISTS display_name TEXT",
+    "ALTER TABLE users_profile ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+    """
+    CREATE TABLE IF NOT EXISTS oauth_identities (
+        provider         TEXT NOT NULL,
+        provider_user_id TEXT NOT NULL,
+        user_id          TEXT NOT NULL,
+        email            TEXT,
+        created_at       TEXT NOT NULL,
+        PRIMARY KEY (provider, provider_user_id),
+        CONSTRAINT fk_oauth_identities_user
+            FOREIGN KEY (user_id) REFERENCES users_profile (id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities (user_id)",
 ]
 
 
