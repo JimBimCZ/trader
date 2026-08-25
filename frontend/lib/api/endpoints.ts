@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, CHAT_TIMEOUT_MS } from "./client";
 import type {
   AuthProvider,
   ChatMessage,
@@ -103,7 +103,7 @@ export async function sendChatMessage(message: string): Promise<ChatReply> {
     message: string;
     actions: Record<string, unknown>[];
     error: boolean;
-  }>("/api/chat", { message });
+  }>("/api/chat", { message }, { timeoutMs: CHAT_TIMEOUT_MS });
   return { message: raw.message, actions: raw.actions.map(toAction), error: raw.error };
 }
 
