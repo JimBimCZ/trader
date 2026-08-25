@@ -89,7 +89,7 @@ export function AccountMenu() {
       {open && signedIn && (
         <div
           role="menu"
-          className="material absolute right-0 top-full z-20 mt-2 w-56 rounded-card p-1.5 shadow-pop"
+          className="card absolute right-0 top-full z-20 mt-2 w-56 p-1.5 shadow-pop"
         >
           <p className="truncate px-2.5 py-1.5 text-[12px] text-text-muted">{session.email}</p>
           <div className="mx-2.5 border-t border-hairline border-border" />
