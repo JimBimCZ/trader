@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request, Response
 
+from .errors import PENDING_SESSION_COOKIE_ATTR
 from .identity import COOKIE_MAX_AGE, COOKIE_NAME, SessionCookie, User, UserStore
 from .llm import ActionExecutor, ChatRepository, ChatService
 from .portfolio.service import build_trade_service
@@ -34,6 +35,16 @@ async def get_current_user(request: Request, response: Response) -> User:
     no cookie at all. Handing back a 401 would be wrong: there is nothing to
     log in to yet, and the honest answer to an unreadable session is a fresh
     one.
+
+    The cookie is re-issued on every resolve, not only on a mint. Both the
+    signature timestamp and the browser's `Max-Age` are absolute, so a cookie
+    written once expired 90 days later no matter how active its owner was --
+    a user who visited every single day was silently handed a fresh guest and
+    a fresh $10,000 on day 90, their real row orphaned. Refreshing it on
+    every request is a sliding window with no threshold to reason about: the
+    session always has its full life left as of the last request. It costs a
+    `Set-Cookie` header on every response, which is the cheapest part of any
+    of these responses.
     """
     store: UserStore = request.app.state.user_store
     cookie: SessionCookie = request.app.state.session_cookie
@@ -43,10 +54,17 @@ async def get_current_user(request: Request, response: Response) -> User:
 
     if user is None:
         user = await store.mint_guest()
-        _set_session_cookie(request, response, cookie, user.id)
+        # A minted guest arrives with ten seeded watchlist rows the market
+        # source has never heard of. Without this the feed keeps whatever it
+        # was tracking -- nothing at all, on an instance that started against
+        # an empty database -- and the new user sees a watchlist with no
+        # prices in it. Reconciling here also repairs a source that has
+        # drifted from the database for any other reason.
+        await request.app.state.reconciler.reconcile()
     else:
         await store.touch(user)
 
+    _set_session_cookie(request, response, cookie, user.id)
     return user
 
 
@@ -92,6 +110,12 @@ def _set_session_cookie(
         secure=_request_is_https(request),
         path="/",
     )
+    # Parked on the request so the error handlers can re-attach it. They build
+    # a fresh JSONResponse, which does not inherit this dependency
+    # sub-response's headers, so without this every 4xx and 422 on a
+    # cookie-less first request minted a guest -- twelve rows -- and handed the
+    # browser no session to come back with. The next request minted another.
+    setattr(request.state, PENDING_SESSION_COOKIE_ATTR, response.headers.get("set-cookie"))
 
 
 CurrentUserDep = Annotated["User", Depends(get_current_user)]

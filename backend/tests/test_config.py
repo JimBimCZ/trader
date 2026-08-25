@@ -44,6 +44,17 @@ class TestFromEnv:
         monkeypatch.setenv("SIM_SEED", "not-a-number")
         assert Settings.from_env().sim_seed is None
 
+    @pytest.mark.parametrize("raw", ["-1", "-365", "0"])
+    def test_a_non_positive_guest_ttl_is_floored_at_a_day(self, monkeypatch, raw):
+        """A negative TTL puts the cleanup cutoff in the *future*, so
+        `last_seen_at < cutoff` matches every guest and the next sweep cascades
+        away every watchlist, position, trade, chat message and snapshot in the
+        database. A typo'd sign in a dashboard variable must not be total data
+        loss.
+        """
+        monkeypatch.setenv("GUEST_TTL_DAYS", raw)
+        assert Settings.from_env().guest_ttl_days >= 1
+
 
 class TestDerivedProperties:
     def test_tick_seconds(self):

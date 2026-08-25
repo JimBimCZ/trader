@@ -205,10 +205,14 @@ needs to reference. See §7 and §11.*
 - **`backend/`** is a self-contained uv project with its own `pyproject.toml`. It owns all server logic including database initialization, schema, seed data, API routes, SSE streaming, market data, and LLM integration. Internal structure is up to the Backend/Market Data agents.
 - **`backend/app/db/`** contains the Postgres schema, connection handling, seed logic, and the
   forward-only migration runner. Startup is eager, in the FastAPI lifespan, not lazy on first
-  request: `init_db` creates the schema if it is missing, `seed_if_empty` seeds default data, then
-  `run_migrations` re-runs every migration statement, in order, on every startup — there is no
-  version table recording which have already run; every statement is written to be safe to run
-  again, so idempotency does the job bookkeeping would otherwise do.
+  request: `init_db` creates the schema if it is missing, then `run_migrations` re-runs every
+  migration statement, in order, on every startup — there is no version table recording which have
+  already run; every statement is written to be safe to run again, so idempotency does the job
+  bookkeeping would otherwise do.
+  *Revised 2026-08-25: `seed_if_empty` is gone from this sequence, and from the codebase. With the
+  app multi-user there is no "the" user to seed at startup — a fresh database holds no users at
+  all until the first request mints a guest, and `seed_user` seeds that one row's watchlist and
+  t=0 snapshot inside the same transaction that creates it. See §7 and `app/identity/store.py`.*
 - **`planning/`** contains project-wide documentation, including this plan. All agents reference files here as the shared contract.
 - **`test/`** contains Playwright E2E tests and supporting infrastructure (e.g., `docker-compose.test.yml`). Unit tests live within `frontend/` and `backend/` respectively, following each framework's conventions.
 - **`scripts/`** contains start/stop scripts that wrap Docker commands.
@@ -291,8 +295,9 @@ tickers to every connection — see the note.*
 
 *Revised 2026-08-25: "all tickers known to the system" is now precisely
 `union(every user's watchlist, every user's open positions)` — computed globally in
-`app/reconcile.py`, not per caller. `GET /api/stream/prices` never resolves a caller at all (it is
-one of exactly two routes that never mint a session guest, the other being `GET /api/health`); it
+`app/reconcile.py`, not per caller. `GET /api/stream/prices` never resolves a caller at all (one of
+four routes that never mint a session guest — the others are `GET /api/health`,
+`GET`/`POST /api/admin/cleanup`, and the SPA catch-all that serves the static frontend); it
 serves this one global set of tickers identically to every connection. See
 `planning/API_CONTRACT.md` §0 and §2, and `planning/BACKEND_SUMMARY.md`.*
 

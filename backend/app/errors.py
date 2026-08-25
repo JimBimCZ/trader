@@ -89,10 +89,30 @@ class LLMError(AppError):
     status_code, code = 502, "LLM_ERROR"
 
 
-def _envelope(code: str, message: str, status_code: int) -> JSONResponse:
-    return JSONResponse(
+#: Where `deps._set_session_cookie` parks the rendered `Set-Cookie` value, on
+#: `request.state`, so the handlers below can put it back on their own
+#: response. The name lives here rather than in `deps` because `deps` imports
+#: this module and not the other way round.
+PENDING_SESSION_COOKIE_ATTR = "pending_session_cookie"
+
+
+def _envelope(request: Request, code: str, message: str, status_code: int) -> JSONResponse:
+    """The error body, carrying whatever session the request already resolved.
+
+    The handlers run after the dependency that mints and signs a guest, and
+    they build a fresh response rather than reusing the dependency's
+    sub-response -- so the `Set-Cookie` that dependency wrote is dropped
+    unless it is copied across here. Dropped, a first request that failed
+    created a user the browser was never told about, and the retry created
+    another.
+    """
+    response = JSONResponse(
         status_code=status_code, content={"error": {"code": code, "message": message}}
     )
+    pending = getattr(request.state, PENDING_SESSION_COOKIE_ATTR, None)
+    if pending:
+        response.headers.append("set-cookie", pending)
+    return response
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -100,19 +120,19 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        return _envelope(exc.code, exc.message, exc.status_code)
+        return _envelope(request, exc.code, exc.message, exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         detail = exc.errors()[0] if exc.errors() else {}
         field = ".".join(str(part) for part in detail.get("loc", ())[1:]) or "request"
-        return _envelope("VALIDATION_ERROR", f"Invalid value for {field}.", 422)
+        return _envelope(request, "VALIDATION_ERROR", f"Invalid value for {field}.", 422)
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
         # Log the real cause; never leak internals to the client.
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
-        return _envelope("INTERNAL_ERROR", "An unexpected error occurred.", 500)
+        return _envelope(request, "INTERNAL_ERROR", "An unexpected error occurred.", 500)
 
 
 class FrontendNotBuiltError(AppError):

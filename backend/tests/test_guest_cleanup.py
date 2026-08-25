@@ -156,6 +156,29 @@ class TestCleanupRouteWithSecretConfigured:
         assert response.status_code == 200
         assert response.json() == {"deleted": 0}
 
+    async def test_a_non_ascii_secret_header_is_refused_rather_than_crashing(
+        self, configured_client
+    ):
+        """Starlette decodes header bytes as latin-1, so a raw byte >= 0x80
+        yields a str with a codepoint above 127 -- and `secrets.compare_digest`
+        refuses those with a TypeError. An unauthenticated caller could turn
+        the one route that deletes rows into a 500 plus a full traceback.
+        Sent as bytes because httpx will not encode a non-ASCII str header.
+        """
+        response = configured_client.post(
+            "/api/admin/cleanup", headers={b"X-Cleanup-Secret": b"\xff"}
+        )
+        assert response.status_code in (401, 403)
+
+    async def test_a_non_ascii_bearer_token_is_refused_rather_than_crashing(
+        self, configured_client
+    ):
+        """The same crash through the other accepted header."""
+        response = configured_client.get(
+            "/api/admin/cleanup", headers={b"Authorization": b"Bearer \xff"}
+        )
+        assert response.status_code in (401, 403)
+
     async def test_the_route_is_refused_when_the_header_is_entirely_absent(self, configured_client):
         """A secret is configured, but the caller sent no header at all --
         distinct from the unset-secret case in `TestCleanupRoute`."""

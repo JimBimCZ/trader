@@ -60,7 +60,13 @@ async def cleanup(request: Request) -> dict:
     """
     secret = request.app.state.settings.cleanup_secret
     supplied = _supplied_secret(request)
-    if not secret or not secrets.compare_digest(supplied, secret):
+    # Compared as bytes, not as str. Starlette decodes header bytes as
+    # latin-1, so a single raw byte >= 0x80 in the header produces a str with
+    # a codepoint above 127 -- and `compare_digest` refuses those with a
+    # TypeError, turning an unauthenticated request into a 500 and a
+    # traceback on the one route that deletes rows. Encoding first is total:
+    # every str encodes to UTF-8, and the comparison stays constant-time.
+    if not secret or not secrets.compare_digest(supplied.encode("utf-8"), secret.encode("utf-8")):
         raise CleanupForbiddenError(
             "Cleanup requires a valid X-Cleanup-Secret header, or an "
             "Authorization: Bearer header carrying the same secret."

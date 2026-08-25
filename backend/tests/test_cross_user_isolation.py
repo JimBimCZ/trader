@@ -72,15 +72,33 @@ class TestPortfolioIsolation:
 
 
 class TestWatchlistIsolation:
+    """Both of these establish the second session *before* the mutation.
+
+    `second_client`'s guest is minted by its first request, and minting
+    re-seeds the ten defaults. Reading it only afterwards made
+    `test_a_removed_ticker_stays_for_another_user` vacuous: AAPL came back
+    from the seed no matter what the DELETE had done, and the whole suite
+    passed with `WatchlistRepository.remove` deleting that ticker for every
+    user in the database -- the one cross-user destructive write, with no
+    coverage anywhere.
+    """
+
     def test_an_added_ticker_does_not_appear_for_another_user(self, api_client, second_client):
+        before = second_client.get("/api/watchlist").json()["tickers"]
+        assert "PYPL" not in before
+
         api_client.post("/api/watchlist", json={"ticker": "PYPL"})
 
         assert "PYPL" not in second_client.get("/api/watchlist").json()["tickers"]
 
     def test_a_removed_ticker_stays_for_another_user(self, api_client, second_client):
+        assert "AAPL" in second_client.get("/api/watchlist").json()["tickers"]
+
         api_client.delete("/api/watchlist/AAPL")
 
-        assert "AAPL" in second_client.get("/api/watchlist").json()["tickers"]
+        assert "AAPL" in second_client.get("/api/watchlist").json()["tickers"], (
+            "the DELETE reached another user's row"
+        )
 
 
 class TestChatIsolation:

@@ -57,6 +57,35 @@ class TestReleaseIfUnheld:
         assert "AAPL" in services.source.get_tickers()
 
 
+class TestTheTrackedSetHasAFloor:
+    """One user emptying their watchlist must not darken the feed for everyone.
+
+    `compute_tracked_tickers()` floors an empty union to DEFAULT_WATCHLIST so a
+    fresh deployment starts warm, but `release_if_unheld` used to run its own
+    "does anyone watch or hold this?" query, which applied only the raw union.
+    Ten ordinary DELETEs -- each individually correct -- drained the tracked
+    set to nothing: the process-wide price cache went empty, `/api/health`
+    reported `degraded`, and every later visitor was seeded with ten tickers
+    that had no prices, until a restart or a reset.
+    """
+
+    async def test_draining_a_watchlist_leaves_the_feed_tracking_something(self, services):
+        for ticker in await services.watchlist_service.list():
+            await services.watchlist_service.remove(ticker)
+
+        assert services.source.get_tickers(), (
+            "the tracked set drained to empty; the price cache is now dark for every user"
+        )
+
+    async def test_a_ticker_outside_the_floor_is_still_released(self, services):
+        """The floor must not turn into 'never release anything'."""
+        await services.watchlist_service.add("PYPL")
+
+        await services.watchlist_service.remove("PYPL")
+
+        assert "PYPL" not in services.source.get_tickers()
+
+
 class TestReconcile:
     async def test_adds_missing_and_drops_extra_tickers(self, services):
         """Reconcile forces the source to match the union exactly."""

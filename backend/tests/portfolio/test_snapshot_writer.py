@@ -185,3 +185,47 @@ class TestCoversActiveUsers:
         # The seeded t=0 point, plus the one written despite the other user
         # raising mid-pass.
         assert len(rows) == 2
+
+
+class TestTheLifespanSkipsTheWriterOnServerless:
+    """The market source, the history collector and the guest cleaner all check
+    `settings.serverless`; the writer did not.
+
+    Its `start()` is not free any more: it awaits one snapshot write per user
+    active in the last hour before the lifespan yields, so every Vercel cold
+    start would pay N Neon round trips before serving a single request, on the
+    target with the tightest time budget -- and the loop it creates is never
+    scheduled between requests anyway. `GET /api/portfolio` calls
+    `write_snapshot_if_stale()` there instead.
+    """
+
+    @staticmethod
+    def _started_writers(settings, monkeypatch) -> list:
+        from fastapi.testclient import TestClient
+
+        import app.main as main_module
+        from tests.conftest import CLIENT_BASE_URL, _drop_schema
+
+        started: list = []
+
+        async def recording_start(self) -> None:
+            started.append(self)
+
+        monkeypatch.setattr(main_module.SnapshotWriter, "start", recording_start)
+        try:
+            with TestClient(main_module.create_app(settings), base_url=CLIENT_BASE_URL):
+                pass
+        finally:
+            asyncio.run(_drop_schema(settings.database_url, settings.db_schema))
+        return started
+
+    def test_no_writer_starts_when_the_platform_freezes_the_process(self, settings, monkeypatch):
+        monkeypatch.setenv("VERCEL", "1")
+
+        assert self._started_writers(settings, monkeypatch) == []
+
+    def test_the_writer_still_starts_on_a_long_lived_process(self, settings, monkeypatch):
+        """The guard must not have turned the background task off everywhere."""
+        monkeypatch.delenv("VERCEL", raising=False)
+
+        assert len(self._started_writers(settings, monkeypatch)) == 1

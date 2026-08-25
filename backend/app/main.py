@@ -133,16 +133,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trade_lock = asyncio.Lock()
         watchlist_lock = asyncio.Lock()
 
-        snapshot_writer = SnapshotWriter(
-            db,
-            settings,
-            app.state.user_store,
-            price_cache,
-            settings.snapshot_interval_seconds,
-            settings.snapshot_retention_days,
-        )
-        await snapshot_writer.start()
-        stack.push_async_callback(snapshot_writer.stop)
+        # Serverless gets no writer at all. Its loop would never be scheduled
+        # between requests, and `start()` is not free any more: it awaits one
+        # snapshot write per user active in the last hour, so every cold start
+        # would pay N Neon round trips before serving anything, growing with
+        # adoption. `GET /api/portfolio` calls `write_snapshot_if_stale()`
+        # there instead -- scoped to a user who is actually looking at the app.
+        if not settings.serverless:
+            snapshot_writer = SnapshotWriter(
+                db,
+                settings,
+                app.state.user_store,
+                price_cache,
+                settings.snapshot_interval_seconds,
+                settings.snapshot_retention_days,
+            )
+            await snapshot_writer.start()
+            stack.push_async_callback(snapshot_writer.stop)
 
         # Nothing runs between requests on a serverless instance, so idle
         # guests there are expired by Vercel Cron hitting the admin route

@@ -69,21 +69,26 @@ class TickerReconciler:
         logger.info("Now tracking %s", ticker)
 
     async def release_if_unheld(self, ticker: str) -> None:
-        """Stop tracking only when no user watches or holds the ticker.
+        """Stop tracking only when the ticker is not in the target set.
 
         Removing a ticker also evicts its cached price, so releasing one that
         another user still holds makes their valuation fail -- or worse,
         silently value the position at zero.
+
+        Asks `compute_tracked_tickers()` rather than running its own
+        "does anyone watch or hold this?" query, so the default-watchlist
+        floor lives in exactly one place. With its own query it applied only
+        the raw union, and the last user to empty their watchlist could drain
+        the tracked set to nothing: the price cache went empty process-wide,
+        every later visitor was seeded with ten tickers that had no prices,
+        and health reported `degraded` until a restart.
         """
-        row = await self._db.fetch_one(
-            "SELECT 1 AS present FROM watchlist WHERE ticker = ? "
-            "UNION ALL "
-            "SELECT 1 AS present FROM positions WHERE ticker = ? AND quantity > ? "
-            "LIMIT 1",
-            (ticker, ticker, EPSILON),
-        )
-        if row is not None:
-            logger.info("Keeping %s tracked: another user watches or holds it", ticker)
+        if ticker in await self.compute_tracked_tickers():
+            logger.info(
+                "Keeping %s tracked: another user watches or holds it, "
+                "or it is part of the default floor",
+                ticker,
+            )
             return
         await self._source.remove_ticker(ticker)
         logger.info("Stopped tracking %s", ticker)

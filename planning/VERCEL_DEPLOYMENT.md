@@ -94,7 +94,7 @@ any more; it is just how the app talks to its one database.*
 *Updated 2026-08-25, once the per-user-scoping phase landed: the snapshot writer no longer rides
 the SSE heartbeat described in the original version of this row — that plumbing (a snapshot tick
 inside the SSE generator) was deleted outright, because the SSE stream never resolves a caller
-(`GET /api/stream/prices` is one of the two routes that never mints a session — see
+(`GET /api/stream/prices` is one of the four routes that never mint a session — see
 `planning/API_CONTRACT.md` §0) and so has no single user to attribute a snapshot to any more. See
 `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`.*
 
@@ -102,7 +102,7 @@ inside the SSE generator) was deleted outright, because the SSE stream never res
 |---|---|
 | Simulator loop | Deleted. Prices are computed, not ticked. |
 | History collector | Deleted. History is computed backwards from now. |
-| Snapshot writer | `GET /api/portfolio` calls `TradeService.write_snapshot_if_stale()`, which writes a snapshot for the calling user only when their newest one is already older than `snapshot_interval_seconds` (30s default). Trades still write their own snapshot inline, as they always have. This reuses exactly the read that is naturally scoped to a user who is actually looking at the app — the same principle the deleted SSE-heartbeat approach was reaching for, without needing a stream to hang it off. |
+| Snapshot writer | Not started at all when `VERCEL` is set (`Settings.serverless`), matching the market source, the history collector and the guest cleaner — its `start()` awaits one snapshot write per recently active user, which would put N Neon round trips in front of every cold start. Instead, `GET /api/portfolio` calls `TradeService.write_snapshot_if_stale()`, which writes a snapshot for the calling user only when their newest one is already older than `snapshot_interval_seconds` (30s default). Trades still write their own snapshot inline, as they always have. This reuses exactly the read that is naturally scoped to a user who is actually looking at the app — the same principle the deleted SSE-heartbeat approach was reaching for, without needing a stream to hang it off. |
 | Guest cleanup | Deleted as a background task on this target (nothing runs between requests to drive a loop). `vercel.json` schedules a daily `GET /api/admin/cleanup` hit at `0 4 * * *` (04:00 UTC) instead. A `vercel.json` `crons` entry takes only `path` and `schedule` — there is no way to attach a custom header to it — so the route accepts Vercel's own convention as well as its native one: it reads either `X-Cleanup-Secret` (a human or a non-Vercel scheduler) or `Authorization: Bearer <secret>` (what Vercel Cron auto-attaches whenever `CRON_SECRET` is set), and checks either against the same configured secret. Set `CRON_SECRET` in the dashboard and the scheduled hit authenticates itself with no other configuration. |
 
 The container target keeps both as real background tasks: `SnapshotWriter` ticks every 30s and

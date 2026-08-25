@@ -18,7 +18,7 @@ Conventions:
 
 ## 0. Identity — the `trader_session` cookie
 
-There is no sign-in yet. Every request that reaches a route other than the two named below resolves
+There is no sign-in yet. Every request that reaches a route other than the ones named below resolves
 a caller from a signed cookie, minting a fresh guest the first time a browser arrives without one
 (or with one that no longer verifies — see below). Nothing about this is visible in a request or
 response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
@@ -27,7 +27,7 @@ response body; it is entirely a `Set-Cookie` / `Cookie` exchange.
 |---|---|
 | Name | `trader_session` |
 | Contents | The user id, signed (itsdangerous `URLSafeTimedSerializer`); opaque to the client |
-| `Max-Age` | `7776000` seconds (90 days) |
+| `Max-Age` | `7776000` seconds (90 days), **sliding** — see below |
 | `HttpOnly` | yes |
 | `SameSite` | `Lax` |
 | `Secure` | Set when the request reached the app over https — judged from `X-Forwarded-Proto` when present (so a TLS-terminating proxy like Vercel is honored), falling back to the request's own scheme otherwise. **Not** decided by hostname: a Docker deployment reached over plain http on a LAN address must not get a `Secure` cookie, or the browser silently refuses to store it and mints a fresh guest on every request. |
@@ -38,9 +38,28 @@ row a database reset removed — is treated exactly like no cookie at all: a fre
 rather than the request failing with 401. There is nothing to log in to yet, so an unreadable
 session is not an error condition.
 
-**Two routes never mint a guest and never touch the cookie:** `GET /api/health` and
-`GET /api/stream/prices`. Both are read-only against shared, non-user-scoped state (process health;
-the shared price cache), so neither needs — or creates — a user.
+*Corrected 2026-08-25.* **The 90 days slide.** Both the signature timestamp and the browser's
+`Max-Age` are absolute, so a cookie issued only at mint expired 90 days later however active its
+owner had been — a daily visitor was silently handed a fresh guest and a fresh $10,000 on day 90,
+their real row orphaned until the cleaner reaped it. The cookie is therefore re-issued on **every**
+resolve, mint or not: every response from a caller-resolving route carries a `Set-Cookie` with the
+same user id and a full 90 days. Re-issuing unconditionally rather than past some fraction of the
+cookie's life is deliberate — there is no threshold to reason about, and the session always has its
+full life left as of the last request. The TTL is there to expire *idle* guests
+(`GUEST_TTL_DAYS`), and this is what keeps it from expiring active ones.
+
+*Corrected 2026-08-25.* **Error responses carry the cookie too.** The 4xx/422/500 envelope of §1 is
+built by an exception handler, which does not inherit the headers of the dependency that resolved
+the caller. Those handlers re-attach the `Set-Cookie` explicitly; without it a cookie-less first
+request that failed created a guest (a profile, ten watchlist rows and a snapshot) and told the
+browser nothing about it, so the retry created another.
+
+**Four routes never mint a guest and never touch the cookie:** `GET /api/health`,
+`GET /api/stream/prices`, `GET`/`POST /api/admin/cleanup` (§8), and the SPA catch-all
+`GET /{path}` that serves the static frontend. The first two are read-only against shared,
+non-user-scoped state (process health; the shared price cache); the cleanup route is authorized by
+a shared secret rather than by a user and deletes rows on a scheduler's behalf; the catch-all
+serves files. None of them needs — or creates — a user.
 
 ---
 
@@ -393,7 +412,10 @@ this app, and the route must be callable by a scheduler with no cookie of its ow
 - Both methods run the same logic. `GET` exists because Vercel Cron issues a GET; `POST` is for
   manual/curl use.
 - Response `200`: `{"deleted": 3}` — the count of guests removed.
-- This route is one of the two that never mints a guest (§0); calling it does not create a session.
+- This route is one of the four that never mint a guest (§0); calling it does not create a session.
+- A header value carrying a byte ≥ `0x80` is rejected as a wrong secret (403), not answered with a
+  500: the comparison is made on the UTF-8 bytes, because Starlette decodes header bytes as latin-1
+  and `secrets.compare_digest` refuses a `str` with a codepoint above 127.
 
 ---
 

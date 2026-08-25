@@ -182,7 +182,13 @@ class Settings:
             ).strip(),
             stream_max_seconds=_env_float("STREAM_MAX_SECONDS", 0.0),
             session_secret=session_secret,
-            guest_ttl_days=_env_int("GUEST_TTL_DAYS", 7) or 7,
+            # Floored at one day. 0 already fell back to 7 through `or`, but a
+            # negative value sailed through and inverted the cleanup: the
+            # cutoff lands in the future, `last_seen_at < <tomorrow>` matches
+            # every guest, and the next sweep cascades away every watchlist,
+            # position, trade, chat message and snapshot in the database. A
+            # typo'd sign in a dashboard variable must not be total data loss.
+            guest_ttl_days=max(1, _env_int("GUEST_TTL_DAYS", 7) or 7),
             # CLEANUP_SECRET takes precedence; CRON_SECRET is the fallback so
             # a Vercel deployment that only sets the variable Vercel's own
             # docs prescribe (for its auto-sent `Authorization: Bearer
