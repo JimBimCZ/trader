@@ -67,7 +67,8 @@ export default function Page() {
     void refreshPortfolio();
     void refreshWatchlist();
     void refreshChat();
-  }, [sessionVersion, refreshPortfolio, refreshWatchlist, refreshChat]);
+    void loadSession();
+  }, [sessionVersion, refreshPortfolio, refreshWatchlist, refreshChat, loadSession]);
 
   // Positions change only on a trade, but their value moves with the market.
   useEffect(() => {

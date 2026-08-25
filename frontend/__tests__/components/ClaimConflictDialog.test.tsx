@@ -73,3 +73,18 @@ it("shows the error and stays open when the claim is refused", async () => {
   expect(await screen.findByText(/no longer valid/i)).toBeInTheDocument();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
+
+it("dismisses rather than erroring when the claim succeeded but the reload after it failed", async () => {
+  // useSessionStore.claim() resolves in this case -- a failing post-claim
+  // reload is swallowed there and retried by the page's sessionVersion
+  // effect, not surfaced as a refused claim. The dialog has no way to tell
+  // this apart from a clean success, which is the point: it should not.
+  useSessionStore.setState({ claim: vi.fn().mockResolvedValue(undefined) });
+  visit("?claim=conflict&token=tok");
+
+  render(<ClaimConflictDialog />);
+  await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(window.location.search).toBe("");
+});

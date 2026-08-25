@@ -87,17 +87,20 @@ describe("sessionVersion", () => {
     expect(useSessionStore.getState().sessionVersion).toBe(before);
   });
 
-  it("bumps even when the post-claim reload fails", async () => {
+  it("resolves and still bumps even when the post-claim reload fails", async () => {
     // confirmClaim resolving is the moment the cookie actually moved to the
     // target account -- a network blip on the reload that follows is a
-    // separate, later failure and must not make the caller re-send a token
-    // that a moved cookie has already made invalid.
+    // separate, later failure. claim()'s contract is "did the claim happen?",
+    // so it must not reject here: rejecting would tell the caller the claim
+    // was refused, and a retry would re-send a token a moved cookie has
+    // already made invalid. The version bump drives a separate retry of the
+    // session reload.
     vi.mocked(endpoints.confirmClaim).mockResolvedValue(undefined);
     vi.mocked(endpoints.fetchSession).mockRejectedValue(new Error("network blip"));
 
     const before = useSessionStore.getState().sessionVersion;
     await act(async () => {
-      await expect(useSessionStore.getState().claim("tok")).rejects.toThrow();
+      await expect(useSessionStore.getState().claim("tok")).resolves.toBeUndefined();
     });
 
     expect(useSessionStore.getState().sessionVersion).toBe(before + 1);
