@@ -557,6 +557,12 @@ When `LLM_MOCK=true`, the backend returns deterministic mock responses instead o
 
 ### Layout
 
+*Revised 2026-08-25: the export is no longer a single page. `/privacy/` is a second, static
+route — prose rather than workspace — and both pages carry a footer that links to it. The
+workspace below is otherwise unchanged. See the **Footer** bullet in this section,
+`planning/FRONTEND_SUMMARY.md`, and the note in §11 on what serving a second route costs the
+container target.*
+
 The frontend is a single-page application shaped like a macOS app: a translucent sidebar, a
 unified toolbar, and a three-column workspace where each panel owns its own scroll region. The
 page itself does not scroll on a wide screen.
@@ -574,7 +580,9 @@ page itself does not scroll on a wide screen.
 │          │           │ Allocation│ Perform. │             │
 │          │           ├───────────┴──────────┤             │
 │          │           │  Positions           │             │
-└────────┴───────────┴──────────────────────┴─────────────┘
+│          ├───────────┴──────────────────────┴─────────────┤
+│          │ Simulated trading — not advice         Privacy │
+└────────┴────────────────────────────────────────────────┘
 ```
 
 Below the `lg` breakpoint this inverts: the sidebar collapses to a horizontal icon bar, panels
@@ -622,6 +630,13 @@ include these elements:
   while waiting for the LLM. Trade executions and watchlist changes appear inline as receipts,
   carrying the instrument's chip and named in the tense that is true — a filled order reads
   "Bought 10 AAPL", a rejected one reads "Buy 10 AAPL".
+- **Footer** — one hairline-topped line under the workspace, carrying what the numbers above are
+  worth ("Simulated trading with virtual money — not financial advice") and a link to
+  `/privacy/`. It wears the *muted* tone rather than the faint one its 11px size invites:
+  `textFaint` is 2.92:1 on the light canvas, under the floor this section sets, and small text is
+  exactly where that floor matters. Both of its pairings are held by `theme.test.ts`. It costs
+  ~28px of the `lg:h-screen` split, which the panels absorb because their rows are `minmax(0,…)`
+  fractions rather than fixed heights.
 
 ### Technical Notes
 
@@ -644,6 +659,11 @@ include these elements:
   styled element existing. The store adopts what that script already decided rather than deciding
   again during render — resolving it any earlier in React would make the client's first render
   disagree with the exported HTML.
+- **…but that script runs once, so every page mounts the store.** `system` is specified to keep
+  following the OS *while the page is open* (§2), and the `matchMedia` listener that does the
+  following lives in the theme store. A page that renders no store consumer is therefore correct
+  at load and then frozen — which is exactly what the privacy page did until `ThemeSync` was
+  extracted for it. Both pages mount it; a third would have to as well.
 - Canvas font strings cannot name a font stack the way CSS can, so charts read the resolved
   family off the document at mount
 - Charts render timestamps in the viewer's local time; the series is keyed by UTC seconds, and an
@@ -673,6 +693,22 @@ Stage 2: Python 3.12 slim
 ```
 
 FastAPI serves the static frontend files and all API routes on port 8000.
+
+### Serving a route that is a directory
+
+*Added 2026-08-25, with `/privacy/` (§10).*
+
+`next.config.ts` sets `trailingSlash: true`, so the export emits one **directory** per route —
+`privacy/index.html`, not `privacy.html`. The catch-all in `app/main.py` therefore tries two
+things for every non-API path, in order: the path as a file, then `index.html` inside it. Only
+then does it fall back to the app shell.
+
+This asymmetry is worth stating because it hides itself. Vercel serves `frontend/out` from the
+CDN, which resolves a directory to its index without being asked, so a catch-all that only
+matched files looked correct there and answered `/privacy/` with the *trading workspace* on the
+container target alone. Any second page added later inherits the same trap; the guard against it
+is `TestExportedSubroutes` in `backend/tests/test_api.py`, which asserts both spellings of the
+route and both fallbacks.
 
 ### Docker Compose and the Postgres Volume
 

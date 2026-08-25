@@ -1,13 +1,14 @@
 # Frontend — Component Summary
 
-Status: **complete**. 107 unit tests, 20 E2E, eslint and tsc clean, static export builds to
-116 kB first load and ships no font files.
+Status: **complete**. 153 unit tests, 24 E2E, eslint and tsc clean, static export builds to
+121 kB first load for the workspace (106 kB for `/privacy/`) and ships no font files.
 
 ## Structure
 
 ```
 frontend/
-├── app/               layout, page (the single dashboard), globals.css
+├── app/               layout, page (the dashboard), privacy/ (a static prose route),
+│                      globals.css
 ├── lib/
 │   ├── theme.ts       design tokens — two palettes, the one source for Tailwind and charts
 │   ├── useTheme.ts    the current appearance, for everything CSS cannot reach
@@ -74,6 +75,14 @@ the parse boundary and a test pins the behaviour.
   token now.
 - The sidebar labels are `display:none` below `lg`, which takes them out of the accessibility
   tree as well as the layout, leaving four unnamed buttons on a phone.
+- The privacy page picked the right appearance at load and then froze. The pre-paint script runs
+  once; the `matchMedia` listener that keeps `system` following the OS lives in the theme store,
+  which a page with no store consumer never mounts. `ThemeSync` carries that behaviour now, and
+  the dashboard shares it instead of holding its own copy of the effect. Only visible by changing
+  the OS setting with the page already open — which is why it took a browser, not a test.
+- The footer's first draft used `text-text-faint`, which is 2.92:1 on the light canvas. The
+  palette test only holds pairings it is told about, so a new pairing under the floor passes
+  silently until it is added. Both of the footer's are in `theme.test.ts` now.
 
 ## Where to look first
 
@@ -83,4 +92,5 @@ the parse boundary and a test pins the behaviour.
 | How do prices reach a component? | `lib/stream/priceStore.ts` |
 | Why is this colour used? | `lib/theme.ts` |
 | Which appearance am I in? | `lib/useTheme.ts` |
+| Why does a page need `ThemeSync`? | `components/layout/ThemeSync.tsx` |
 | How does the chart stay live? | `components/chart/MainChart.tsx` |

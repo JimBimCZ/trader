@@ -119,6 +119,12 @@ Python.
 /api/*       → api/index.py           (FastAPI, rewritten from /api/(.*))
 ```
 
+**This target never exercises the SPA catch-all for a page.** No static asset reaches Python
+here, so the CDN is what resolves `/privacy/` to `privacy/index.html` — and it does that without
+being asked. The container target has no CDN and resolves it in `app/main.py` instead, which is
+why a catch-all bug in that resolution is invisible on Vercel and wrong only in Docker. It cost
+one round of exactly that; see PLAN.md §11.
+
 `litellm` (91 MB, ~130 MB with its tree) and `numpy` (26 MB) drop out of the Vercel bundle — their
 imports become lazy, so the modules stay importable without them. Deploying with `LLM_MOCK=true`
 therefore ships ~15 MB of dependencies instead of ~160 MB.

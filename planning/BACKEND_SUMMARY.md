@@ -2,7 +2,10 @@
 
 Status: **complete**. Ruff clean. Runs on Postgres only — SQLite was removed
 2026-08-24; see `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md`. The app is
-now multi-user (anonymous guests, no sign-in yet) — see `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` and the "Per-request services" section below.
+now multi-user: anonymous guests by default, with optional Google/GitHub sign-in attaching a
+guest's portfolio to an account (shipped 2026-08-25; PLAN.md §8 "Sign-in" and API_CONTRACT.md
+§0.1). See `docs/superpowers/specs/2026-08-24-multi-user-oauth-neon-design.md` and the
+"Per-request services" section below.
 
 ## Structure
 
@@ -79,6 +82,13 @@ lost the portfolio, which is worse than refusing to start.
 
 **`trades` is authoritative; positions and cash are a projection.** The execution algorithm is
 exactly the replay procedure, so a future "recompute from trades" repair is well defined.
+
+**The SPA catch-all resolves a directory to its index, then falls back.** The frontend export
+emits one directory per route (`trailingSlash: true`), so `/privacy/` is `privacy/index.html` on
+disk. `spa()` tries the path as a file, then `index.html` inside it, and only then serves the app
+shell — both lookups behind the same traversal guard. Matching only the file looked correct on
+Vercel, whose CDN resolves the directory itself, and served the workspace under the privacy URL
+in Docker alone. See PLAN.md §11 and `tests/test_api.py::TestExportedSubroutes`.
 
 **Chat failures are not HTTP failures.** `POST /api/chat` returns 200 with `error: true` when the
 model is unreachable, so the chat panel needs no separate error path.
