@@ -88,3 +88,64 @@ it("dismisses rather than erroring when the claim succeeded but the reload after
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   expect(window.location.search).toBe("");
 });
+
+it("focuses Cancel on open, not the destructive default under a stray Enter", () => {
+  visit("?claim=conflict&token=tok");
+  render(<ClaimConflictDialog />);
+
+  expect(screen.getByRole("button", { name: /cancel/i })).toHaveFocus();
+});
+
+it("closes on Escape exactly like Cancel", async () => {
+  const claim = vi.fn();
+  useSessionStore.setState({ claim });
+  visit("?claim=conflict&token=tok");
+
+  render(<ClaimConflictDialog />);
+  await userEvent.keyboard("{Escape}");
+
+  await waitFor(() => expect(window.location.search).toBe(""));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(claim).not.toHaveBeenCalled();
+});
+
+it("keeps Tab cycling inside the dialog", async () => {
+  visit("?claim=conflict&token=tok");
+  render(<ClaimConflictDialog />);
+
+  const cancelButton = screen.getByRole("button", { name: /cancel/i });
+  const continueButton = screen.getByRole("button", { name: /continue/i });
+  expect(cancelButton).toHaveFocus();
+
+  await userEvent.tab();
+  expect(continueButton).toHaveFocus();
+
+  // Past the last focusable element, Tab wraps back to the first rather than
+  // escaping into the Rail, the Header or the trade ticket behind the
+  // backdrop -- the overlay only blocks the mouse, not the keyboard.
+  await userEvent.tab();
+  expect(cancelButton).toHaveFocus();
+
+  await userEvent.tab({ shift: true });
+  expect(continueButton).toHaveFocus();
+});
+
+it("disables Cancel while a claim is pending, not just Continue", async () => {
+  let resolveClaim!: () => void;
+  const claim = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        resolveClaim = resolve;
+      }),
+  );
+  useSessionStore.setState({ claim });
+  visit("?claim=conflict&token=tok");
+
+  render(<ClaimConflictDialog />);
+  await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+  expect(screen.getByRole("button", { name: /cancel/i })).toBeDisabled();
+
+  resolveClaim();
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
