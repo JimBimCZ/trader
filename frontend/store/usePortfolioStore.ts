@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { executeTrade, fetchPortfolio, fetchPortfolioHistory } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { Portfolio, Position, SnapshotPoint } from "@/lib/types";
+import type { LoadState, Portfolio, Position, SnapshotPoint } from "@/lib/types";
 
 interface PortfolioState {
   cashBalance: number;
@@ -11,7 +11,11 @@ interface PortfolioState {
   totalValue: number;
   unrealizedPnl: number;
   history: SnapshotPoint[];
-  loaded: boolean;
+  status: LoadState;
+  /** Tracked separately: the history comes from its own endpoint, fetched by
+   *  PnlChart on mount rather than by the boot sequence, so `status` says
+   *  nothing about whether these points have arrived. */
+  historyStatus: LoadState;
   tradeError: string | null;
   tradePending: boolean;
   refresh: () => Promise<void>;
@@ -26,7 +30,7 @@ function applyPortfolio(portfolio: Portfolio) {
     positions: portfolio.positions,
     totalValue: portfolio.totalValue,
     unrealizedPnl: portfolio.unrealizedPnl,
-    loaded: true,
+    status: "ready" as LoadState,
   };
 }
 
@@ -36,16 +40,27 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   totalValue: 0,
   unrealizedPnl: 0,
   history: [],
-  loaded: false,
+  status: "pending" as LoadState,
+  historyStatus: "pending" as LoadState,
   tradeError: null,
   tradePending: false,
 
   refresh: async () => {
-    set(applyPortfolio(await fetchPortfolio()));
+    try {
+      set(applyPortfolio(await fetchPortfolio()));
+    } catch (error) {
+      set({ status: "failed" });
+      throw error;
+    }
   },
 
   refreshHistory: async () => {
-    set({ history: await fetchPortfolioHistory() });
+    try {
+      set({ history: await fetchPortfolioHistory(), historyStatus: "ready" });
+    } catch (error) {
+      set({ historyStatus: "failed" });
+      throw error;
+    }
   },
 
   trade: async (ticker, side, quantity) => {

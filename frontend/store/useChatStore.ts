@@ -5,14 +5,14 @@
 import { create } from "zustand";
 import { fetchChatHistory, sendChatMessage } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, LoadState } from "@/lib/types";
 
 interface ChatState {
   messages: ChatMessage[];
   isLoading: boolean;
-  /** False until history has been fetched, so an empty conversation is not
-   *  claimed before anybody has looked. */
-  loaded: boolean;
+  /** How the history fetch went, so an empty conversation is not claimed
+   *  before anybody has looked, nor when the looking failed. */
+  status: LoadState;
   refresh: () => Promise<void>;
   send: (text: string) => Promise<void>;
 }
@@ -23,10 +23,15 @@ const nextLocalId = () => `local-${++localId}`;
 export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
   isLoading: false,
-  loaded: false,
+  status: "pending" as LoadState,
 
   refresh: async () => {
-    set({ messages: await fetchChatHistory(), loaded: true });
+    try {
+      set({ messages: await fetchChatHistory(), status: "ready" });
+    } catch (error) {
+      set({ status: "failed" });
+      throw error;
+    }
   },
 
   send: async (text) => {

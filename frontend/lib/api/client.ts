@@ -33,28 +33,43 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
+/**
+ * Whether a thrown value is the deadline firing rather than a real failure.
+ *
+ * `AbortSignal.timeout` aborts with a TimeoutError; a caller's own abort
+ * arrives as an AbortError. Both mean the request ran out of time rather than
+ * the server being down, and the two need different words from a genuine
+ * network failure: one says "try again", the other says "check your
+ * connection".
+ */
+function isTimeout(error: unknown): boolean {
+  const name = (error as { name?: string } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
+const timeoutError = () =>
+  new ApiError("TIMEOUT", "The server took too long to respond.", 0);
+
 async function request<T>(
   path: string,
   init?: RequestInit,
   { timeoutMs = DEFAULT_TIMEOUT_MS }: RequestOptions = {},
 ): Promise<T> {
+  // Live for the whole response lifecycle, body streaming included -- which
+  // is why every read below is guarded too, not just this call. A deadline
+  // that fires after the headers arrive but mid-body would otherwise escape
+  // as a raw DOMException, and every caller tests `instanceof ApiError`.
+  const signal = AbortSignal.timeout(timeoutMs);
+
   let response: Response;
   try {
     response = await fetch(path, {
       ...init,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
   } catch (error) {
-    // A timeout and an unreachable server both surface here, and they need
-    // different words: one means "try again", the other means "check your
-    // connection". `AbortSignal.timeout` aborts with a TimeoutError, but a
-    // caller's own abort arrives as AbortError, so both are treated as the
-    // request having run out of time rather than the server being down.
-    const name = (error as { name?: string })?.name;
-    if (name === "TimeoutError" || name === "AbortError") {
-      throw new ApiError("TIMEOUT", "The server took too long to respond.", 0);
-    }
+    if (isTimeout(error)) throw timeoutError();
     throw new ApiError("NETWORK_ERROR", "Could not reach the server.", 0);
   }
 
@@ -67,8 +82,11 @@ async function request<T>(
         code = body.error.code ?? code;
         message = body.error.message ?? message;
       }
-    } catch {
-      // A non-JSON error body leaves the defaults in place.
+    } catch (error) {
+      // A non-JSON error body leaves the defaults in place -- but a deadline
+      // firing mid-body is not a malformed body, and reporting it as
+      // INTERNAL_ERROR would hide the one thing the caller could act on.
+      if (isTimeout(error)) throw timeoutError();
     }
     throw new ApiError(code, message, response.status);
   }
@@ -81,7 +99,13 @@ async function request<T>(
   // `undefined` instead of throwing. A non-empty body that fails to parse
   // still throws -- that's a real bug in a response, not an empty one, and
   // hiding it here would be worse than the exception.
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (isTimeout(error)) throw timeoutError();
+    throw new ApiError("NETWORK_ERROR", "The response could not be read.", response.status);
+  }
   return (text === "" ? undefined : JSON.parse(text)) as T;
 }
 

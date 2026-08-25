@@ -16,6 +16,7 @@ import { formatCompact, formatIsoClock, formatPrice } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
 import { CHART_MIN_H } from "../layout/panels";
 import { Skeleton } from "../ui/Skeleton";
+import { LoadFailure } from "../ui/LoadFailure";
 
 /**
  * Whole dollars are unreadable when the series spans a few dollars — every
@@ -50,12 +51,21 @@ export function axisWidth(values: number[], range: number): number {
 export function PnlChart() {
   const { colors, shadows } = usePalette();
   const history = usePortfolioStore((s) => s.history);
-  const loaded = usePortfolioStore((s) => s.loaded);
+  // `historyStatus`, not `status`: this chart draws `history`, which comes
+  // from its own endpoint fetched in the effect below -- while `status`
+  // tracks GET /api/portfolio, which `useAppBoot` resolves earlier. Gating on
+  // the latter let "Charting starts once the first two snapshots land" render
+  // over history nobody had fetched yet.
+  const historyStatus = usePortfolioStore((s) => s.historyStatus);
   const refreshHistory = usePortfolioStore((s) => s.refreshHistory);
 
   useEffect(() => {
-    refreshHistory();
-    const timer = setInterval(refreshHistory, 30_000);
+    // Swallowed, not ignored: `refreshHistory` records the outcome on the
+    // store, which is what the render below reads. Letting it reject here
+    // would only raise an unhandled rejection saying the same thing.
+    const load = () => void refreshHistory().catch(() => {});
+    load();
+    const timer = setInterval(load, 30_000);
     return () => clearInterval(timer);
   }, [refreshHistory]);
 
@@ -86,8 +96,10 @@ export function PnlChart() {
         )}
       </header>
       <div className="min-h-0 flex-1 p-2" data-testid="pnl-chart">
-        {!loaded ? (
+        {historyStatus === "pending" ? (
           <Skeleton className="h-full w-full rounded-[10px]" />
+        ) : historyStatus === "failed" ? (
+          <LoadFailure what="the value history" onRetry={refreshHistory} className="h-full" />
         ) : data.length < 2 ? (
           <p className="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
             Charting starts once the first two snapshots land, about a minute in.

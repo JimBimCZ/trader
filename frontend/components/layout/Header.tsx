@@ -18,7 +18,9 @@ import { Skeleton } from "../ui/Skeleton";
  */
 export function Header() {
   const cash = usePortfolioStore((s) => s.cashBalance);
-  const loaded = usePortfolioStore((s) => s.loaded);
+  const status = usePortfolioStore((s) => s.status);
+  const ready = status === "ready";
+  const failed = status === "failed";
   const positions = usePortfolioStore((s) => s.positions);
   const prices = usePriceStore((s) => s.prices);
   const { appearance } = usePalette();
@@ -47,7 +49,7 @@ export function Header() {
         <p className="field-label">Portfolio value</p>
         {/* $0.00 is a number, and a wrong one: before the fetch answers there
             is no portfolio to total. */}
-        {loaded ? (
+        {ready ? (
           <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
             <span
               className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text"
@@ -62,8 +64,19 @@ export function Header() {
           </div>
         ) : (
           <div className="mt-1 flex items-center gap-2.5">
-            <Skeleton className="h-[34px] w-48" />
-            <Skeleton className="h-4 w-24" />
+            {/* A failed load shows the dash rather than a skeleton: the
+                toolbar has no room for a retry, and the panels below carry
+                one. */}
+            {failed ? (
+              <span className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text-muted">
+                &mdash;
+              </span>
+            ) : (
+              <>
+                <Skeleton className="h-[34px] w-48" />
+                <Skeleton className="h-4 w-24" />
+              </>
+            )}
           </div>
         )}
       </div>
@@ -75,7 +88,7 @@ export function Header() {
           <p className="field-label">Allocation</p>
           <p className="text-[12px] font-medium text-text-muted">
             <span className="text-text" data-testid="cash-balance">
-              {loaded ? formatPrice(cash) : "\u2014"}
+              {ready ? formatPrice(cash) : "\u2014"}
             </span>{" "}
             cash
           </p>

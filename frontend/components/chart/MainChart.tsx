@@ -20,7 +20,7 @@ const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
 });
 
 export function MainChart({ ticker }: { ticker: string | null }) {
-  const watchlistLoaded = useWatchlistStore((s) => s.loaded);
+  const watchlistPending = useWatchlistStore((s) => s.status) === "pending";
   const containerRef = useRef<HTMLDivElement>(null);
   const { appearance, colors } = usePalette();
 
@@ -130,14 +130,14 @@ export function MainChart({ ticker }: { ticker: string | null }) {
         {/* "Pick a symbol from the watchlist" is an instruction the user
             cannot follow while the watchlist is still arriving -- there is
             nothing on it to pick. */}
-        {watchlistLoaded ? (
-          <p className="flex flex-1 items-center justify-center text-sm text-text-muted">
-            Pick a symbol from the watchlist to chart it.
-          </p>
-        ) : (
+        {watchlistPending ? (
           <div className="flex-1 p-3">
             <Skeleton className="h-full w-full rounded-[10px]" />
           </div>
+        ) : (
+          <p className="flex flex-1 items-center justify-center text-sm text-text-muted">
+            Pick a symbol from the watchlist to chart it.
+          </p>
         )}
       </section>
     );

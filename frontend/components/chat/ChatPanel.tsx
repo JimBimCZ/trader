@@ -8,6 +8,7 @@ import { ChatMessageBubble } from "./ChatMessageBubble";
 import { Button } from "../ui/Button";
 import { CloseIcon } from "../ui/icons";
 import { Skeleton } from "../ui/Skeleton";
+import { LoadFailure } from "../ui/LoadFailure";
 import { PANELS } from "../layout/panels";
 
 const PROMPTS = ["How is my portfolio doing?", "Buy 10 AAPL", "What should I trim?"];
@@ -25,7 +26,8 @@ function AiAvatar({ className = "h-7 w-7" }: { className?: string }) {
 export function ChatPanel() {
   const messages = useChatStore((s) => s.messages);
   const isLoading = useChatStore((s) => s.isLoading);
-  const loaded = useChatStore((s) => s.loaded);
+  const status = useChatStore((s) => s.status);
+  const refresh = useChatStore((s) => s.refresh);
   const send = useChatStore((s) => s.send);
   const refreshPortfolio = usePortfolioStore((s) => s.refresh);
   const refreshWatchlist = useWatchlistStore((s) => s.refresh);
@@ -90,13 +92,14 @@ export function ChatPanel() {
         {/* The opening prompts are what an empty conversation looks like, so
             they must not stand in for one that has not been fetched --
             otherwise a reload with history flashes the suggestions first. */}
-        {!loaded && (
+        {status === "pending" && (
           <div className="space-y-4 px-1 pt-2" data-testid="chat-skeleton">
             <Skeleton className="h-12 w-4/5 rounded-[18px] rounded-bl-[5px]" />
             <Skeleton className="ml-auto h-9 w-3/5 rounded-[18px] rounded-br-[5px]" />
           </div>
         )}
-        {loaded && messages.length === 0 && (
+        {status === "failed" && <LoadFailure what="the conversation" onRetry={refresh} />}
+        {status === "ready" && messages.length === 0 && (
           <div className="space-y-3 px-1 pt-2">
             <p className="text-[13px] leading-[1.45] text-text-muted">
               Ask about your positions, or say what to trade and I&apos;ll place the order.

@@ -6,12 +6,14 @@ import { WatchlistRow } from "./WatchlistRow";
 import { Button } from "../ui/Button";
 import { ErrorNote } from "../ui/ErrorNote";
 import { SkeletonRow } from "../ui/Skeleton";
+import { LoadFailure } from "../ui/LoadFailure";
 import { PANELS } from "../layout/panels";
 
 export function WatchlistPanel() {
   const tickers = useWatchlistStore((s) => s.tickers);
   const cap = useWatchlistStore((s) => s.cap);
-  const loaded = useWatchlistStore((s) => s.loaded);
+  const status = useWatchlistStore((s) => s.status);
+  const refresh = useWatchlistStore((s) => s.refresh);
   const error = useWatchlistStore((s) => s.error);
   const add = useWatchlistStore((s) => s.add);
   const clearError = useWatchlistStore((s) => s.clearError);
@@ -33,7 +35,7 @@ export function WatchlistPanel() {
       <header className="card-title">
         <span>Watchlist</span>
         <span className="text-[11px] font-medium text-text-muted">
-          {loaded ? `${tickers.length} of ${cap}` : "\u2014"}
+          {status === "ready" ? `${tickers.length} of ${cap}` : "\u2014"}
         </span>
       </header>
 
@@ -43,10 +45,12 @@ export function WatchlistPanel() {
           <WatchlistRow key={ticker} ticker={ticker} />
         ))}
         {/* The empty copy is a claim about the list, so it waits until the
-            list has actually been fetched. */}
-        {!loaded &&
+            list has actually been fetched -- and a failed fetch gets its own
+            answer rather than a skeleton nothing will ever resolve. */}
+        {status === "pending" &&
           Array.from({ length: 8 }, (_, i) => <SkeletonRow key={`skeleton-${i}`} />)}
-        {loaded && tickers.length === 0 && (
+        {status === "failed" && <LoadFailure what="the watchlist" onRetry={refresh} />}
+        {status === "ready" && tickers.length === 0 && (
           <p className="px-4 py-8 text-center text-[13px] text-text-muted">
             Nothing on the list yet. Add a symbol below to start watching it.
           </p>

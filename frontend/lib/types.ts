@@ -1,4 +1,15 @@
 /**
+ * How a panel's first load went.
+ *
+ * Three states, because two produced a bug in each direction: a boolean that
+ * only ever flipped on success left a failed fetch showing a skeleton for
+ * ever, and a boolean flipped in a `finally` made the panel claim the data
+ * was empty when nobody had managed to read it. "We asked and it did not
+ * work" is its own answer and has to be rendered as one.
+ */
+export type LoadState = "pending" | "ready" | "failed";
+
+/**
  * Wire types, mirroring planning/API_CONTRACT.md.
  *
  * Raw* types are exactly what the backend sends (snake_case). The camelCase

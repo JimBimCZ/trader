@@ -119,3 +119,45 @@ describe("api client, timeouts", () => {
     expect(spy).toHaveBeenCalled();
   });
 });
+
+describe("api client, a deadline that fires mid-body", () => {
+  /**
+   * `AbortSignal.timeout` stays live for the whole response lifecycle, not
+   * just the headers. A timeout landing after the headers but during the body
+   * read used to escape as a raw DOMException on the success path, and got
+   * swallowed into a mislabelled INTERNAL_ERROR on the error path -- so every
+   * caller, which tests `instanceof ApiError`, showed a generic message
+   * instead of the one thing the user could act on.
+   */
+  function bodyThatTimesOut(status: number) {
+    const response = new Response("{}", { status });
+    const boom = () =>
+      Promise.reject(Object.assign(new Error("timed out"), { name: "TimeoutError" }));
+    vi.spyOn(response, "text").mockImplementation(boom);
+    vi.spyOn(response, "json").mockImplementation(boom);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  }
+
+  it("reports a timeout during a successful response's body", async () => {
+    bodyThatTimesOut(200);
+    await expect(api.get("/api/chat")).rejects.toMatchObject({ code: "TIMEOUT" });
+  });
+
+  it("reports a timeout during an error response's body", async () => {
+    bodyThatTimesOut(500);
+    await expect(api.get("/api/chat")).rejects.toMatchObject({ code: "TIMEOUT" });
+  });
+
+  it("always rejects with an ApiError, never a bare DOMException", async () => {
+    bodyThatTimesOut(200);
+    await expect(api.get("/api/chat")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("still reports a genuinely unreadable body as a network failure", async () => {
+    const response = new Response("{}", { status: 200 });
+    vi.spyOn(response, "text").mockRejectedValue(new TypeError("network error"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    await expect(api.get("/api/whatever")).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+});
