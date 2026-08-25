@@ -3,6 +3,7 @@
 import { memo, useEffect, useRef } from "react";
 import { createChart, ColorType } from "lightweight-charts";
 import { usePriceStore } from "@/lib/stream/priceStore";
+import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { fetchHistory } from "@/lib/api/endpoints";
 import { instrumentColor } from "@/lib/theme";
 import { usePalette } from "@/lib/useTheme";
@@ -11,6 +12,7 @@ import { PriceCell } from "../ui/PriceCell";
 import { ChangeBadge } from "../ui/ChangeBadge";
 import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { PANELS } from "../layout/panels";
+import { Skeleton } from "../ui/Skeleton";
 
 const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
   const dailyChange = usePriceStore((s) => s.prices[ticker]?.dailyChangePercent ?? 0);
@@ -18,6 +20,7 @@ const LiveChange = memo(function LiveChange({ ticker }: { ticker: string }) {
 });
 
 export function MainChart({ ticker }: { ticker: string | null }) {
+  const watchlistLoaded = useWatchlistStore((s) => s.loaded);
   const containerRef = useRef<HTMLDivElement>(null);
   const { appearance, colors } = usePalette();
 
@@ -124,9 +127,18 @@ export function MainChart({ ticker }: { ticker: string | null }) {
         <header className="card-title">
           <span>{PANELS.chart.label}</span>
         </header>
-        <p className="flex flex-1 items-center justify-center text-sm text-text-muted">
-          Pick a symbol from the watchlist to chart it.
-        </p>
+        {/* "Pick a symbol from the watchlist" is an instruction the user
+            cannot follow while the watchlist is still arriving -- there is
+            nothing on it to pick. */}
+        {watchlistLoaded ? (
+          <p className="flex flex-1 items-center justify-center text-sm text-text-muted">
+            Pick a symbol from the watchlist to chart it.
+          </p>
+        ) : (
+          <div className="flex-1 p-3">
+            <Skeleton className="h-full w-full rounded-[10px]" />
+          </div>
+        )}
       </section>
     );
   }

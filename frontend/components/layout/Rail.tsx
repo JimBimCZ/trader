@@ -19,11 +19,15 @@ export function Rail() {
   const tickers = useWatchlistStore((s) => s.tickers);
   const selected = useWatchlistStore((s) => s.selectedTicker);
   const positions = usePortfolioStore((s) => s.positions);
+  const watchlistLoaded = useWatchlistStore((s) => s.loaded);
+  const portfolioLoaded = usePortfolioStore((s) => s.loaded);
 
+  // A count of 0 is a claim, and before the fetch answers it is a wrong one.
+  // An em dash says "not known yet" and keeps the badge's width stable.
   const badges: Record<PanelKey, string | undefined> = {
-    watchlist: String(tickers.length),
+    watchlist: watchlistLoaded ? String(tickers.length) : "\u2014",
     chart: selected ?? undefined,
-    portfolio: String(positions.length),
+    portfolio: portfolioLoaded ? String(positions.length) : "\u2014",
     assistant: undefined,
   };
 

@@ -15,6 +15,7 @@ import { radii } from "@/lib/theme";
 import { formatCompact, formatIsoClock, formatPrice } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
 import { CHART_MIN_H } from "../layout/panels";
+import { Skeleton } from "../ui/Skeleton";
 
 /**
  * Whole dollars are unreadable when the series spans a few dollars — every
@@ -49,6 +50,7 @@ export function axisWidth(values: number[], range: number): number {
 export function PnlChart() {
   const { colors, shadows } = usePalette();
   const history = usePortfolioStore((s) => s.history);
+  const loaded = usePortfolioStore((s) => s.loaded);
   const refreshHistory = usePortfolioStore((s) => s.refreshHistory);
 
   useEffect(() => {
@@ -84,7 +86,9 @@ export function PnlChart() {
         )}
       </header>
       <div className="min-h-0 flex-1 p-2" data-testid="pnl-chart">
-        {data.length < 2 ? (
+        {!loaded ? (
+          <Skeleton className="h-full w-full rounded-[10px]" />
+        ) : data.length < 2 ? (
           <p className="flex h-full items-center justify-center px-4 text-center text-sm text-text-muted">
             Charting starts once the first two snapshots land, about a minute in.
           </p>

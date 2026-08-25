@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/store/useSessionStore";
 import { SignInSheet } from "./SignInSheet";
+import { Skeleton } from "../ui/Skeleton";
 
 export function AccountMenu() {
   const session = useSessionStore((s) => s.session);
@@ -36,7 +37,11 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  if (!session) return null;
+  // Not "no account" -- "not asked yet". Returning null here is what made the
+  // toolbar jump when the session landed; a placeholder the size of the
+  // control holds the space instead. A deployment with no providers still
+  // collapses to nothing, below, once the answer is actually in.
+  if (!session) return <Skeleton className="h-8 w-[104px] rounded-control" />;
 
   const signedIn = session.kind === "user";
   const label = signedIn ? (session.name ?? session.email ?? "Account") : "Sign in";

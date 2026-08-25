@@ -53,6 +53,14 @@ export class FakeEventSource {
 
 vi.stubGlobal("EventSource", FakeEventSource);
 
+// jsdom implements no layout, so it ships no `scrollIntoView` at all -- the
+// property is simply absent rather than a no-op. Both the chat panel (which
+// follows the newest message) and the rail (which scrolls a panel into view
+// on the narrow layouts) call it during an effect, so without this any test
+// that renders either one dies on an environment gap rather than on its own
+// assertion.
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
   FakeEventSource.reset();

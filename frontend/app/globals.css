@@ -168,6 +168,34 @@ textarea {
   .boot-track-fill {
     animation: boot-sweep 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
+
+  /* The skeleton's shimmer. A travelling highlight rather than a pulse:
+     a block that fades in and out reads as content flickering, which is the
+     thing a skeleton is meant to stop. */
+  @keyframes skeleton-sheen {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--c-surface-sunk)) 0%,
+      rgb(var(--c-border)) 50%,
+      rgb(var(--c-surface-sunk)) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-sheen 1.4s linear infinite;
+  }
+}
+
+/* Reduced motion, and the pre-animation ground under the rule above: a flat
+   fill still reads as "not yet content" without anything moving. */
+.skeleton {
+  background-color: rgb(var(--c-surface-sunk));
 }
 
 /* The panels' reveal belongs to the moment the boot screen lifts, not to the

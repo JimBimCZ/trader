@@ -9,6 +9,9 @@ import { ApiError } from "@/lib/api/client";
 interface WatchlistState {
   tickers: string[];
   cap: number;
+  /** False until the first fetch answers, so the panel can tell
+   *  "no tickers" apart from "not asked yet". */
+  loaded: boolean;
   selectedTicker: string | null;
   error: string | null;
   refresh: () => Promise<void>;
@@ -21,6 +24,7 @@ interface WatchlistState {
 export const useWatchlistStore = create<WatchlistState>()((set, get) => ({
   tickers: [],
   cap: 25,
+  loaded: false,
   selectedTicker: null,
   error: null,
 
@@ -28,7 +32,7 @@ export const useWatchlistStore = create<WatchlistState>()((set, get) => ({
     const { tickers, cap } = await fetchWatchlist();
     // Order comes from the server (added_at), never from the SSE frame, so
     // rows stay put as prices update.
-    set({ tickers, cap, selectedTicker: get().selectedTicker ?? tickers[0] ?? null });
+    set({ tickers, cap, loaded: true, selectedTicker: get().selectedTicker ?? tickers[0] ?? null });
   },
 
   add: async (ticker) => {

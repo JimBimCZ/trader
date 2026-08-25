@@ -10,6 +10,7 @@ import { SignedValue } from "../ui/SignedValue";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { AccountMenu } from "./AccountMenu";
+import { Skeleton } from "../ui/Skeleton";
 
 /**
  * The unified toolbar. Chrome rather than a card, so it takes the same
@@ -17,6 +18,7 @@ import { AccountMenu } from "./AccountMenu";
  */
 export function Header() {
   const cash = usePortfolioStore((s) => s.cashBalance);
+  const loaded = usePortfolioStore((s) => s.loaded);
   const positions = usePortfolioStore((s) => s.positions);
   const prices = usePriceStore((s) => s.prices);
   const { appearance } = usePalette();
@@ -43,18 +45,27 @@ export function Header() {
     <header className="rise material relative z-30 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-3.5">
       <div className="min-w-0">
         <p className="field-label">Portfolio value</p>
-        <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
-          <span
-            className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text"
-            data-testid="total-value"
-          >
-            {formatPrice(totalValue)}
-          </span>
-          <span className="text-[13px] font-semibold" data-testid="unrealized-pnl">
-            <SignedValue value={unrealized} />
-            <span className="ml-1 opacity-70">({formatSignedPercent(unrealizedPercent)})</span>
-          </span>
-        </div>
+        {/* $0.00 is a number, and a wrong one: before the fetch answers there
+            is no portfolio to total. */}
+        {loaded ? (
+          <div className="mt-1 flex flex-wrap items-baseline gap-2.5">
+            <span
+              className="text-[34px] font-bold leading-none tracking-[-0.03em] text-text"
+              data-testid="total-value"
+            >
+              {formatPrice(totalValue)}
+            </span>
+            <span className="text-[13px] font-semibold" data-testid="unrealized-pnl">
+              <SignedValue value={unrealized} />
+              <span className="ml-1 opacity-70">({formatSignedPercent(unrealizedPercent)})</span>
+            </span>
+          </div>
+        ) : (
+          <div className="mt-1 flex items-center gap-2.5">
+            <Skeleton className="h-[34px] w-48" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        )}
       </div>
 
       {/* Each segment wears the holding's own colour, the same one it carries
@@ -64,7 +75,7 @@ export function Header() {
           <p className="field-label">Allocation</p>
           <p className="text-[12px] font-medium text-text-muted">
             <span className="text-text" data-testid="cash-balance">
-              {formatPrice(cash)}
+              {loaded ? formatPrice(cash) : "\u2014"}
             </span>{" "}
             cash
           </p>

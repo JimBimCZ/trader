@@ -10,6 +10,9 @@ import type { ChatMessage } from "@/lib/types";
 interface ChatState {
   messages: ChatMessage[];
   isLoading: boolean;
+  /** False until history has been fetched, so an empty conversation is not
+   *  claimed before anybody has looked. */
+  loaded: boolean;
   refresh: () => Promise<void>;
   send: (text: string) => Promise<void>;
 }
@@ -20,9 +23,10 @@ const nextLocalId = () => `local-${++localId}`;
 export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
   isLoading: false,
+  loaded: false,
 
   refresh: async () => {
-    set({ messages: await fetchChatHistory() });
+    set({ messages: await fetchChatHistory(), loaded: true });
   },
 
   send: async (text) => {
