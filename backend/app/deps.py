@@ -10,6 +10,7 @@ to each fresh service.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request, Response
@@ -21,6 +22,8 @@ from .portfolio.service import build_trade_service
 from .system.service import ResetService
 from .watchlist.repository import WatchlistRepository
 from .watchlist.service import WatchlistService
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .history import HistoryStore
@@ -60,7 +63,16 @@ async def get_current_user(request: Request, response: Response) -> User:
         # an empty database -- and the new user sees a watchlist with no
         # prices in it. Reconciling here also repairs a source that has
         # drifted from the database for any other reason.
-        await request.app.state.reconciler.reconcile()
+        #
+        # Never fatal. The guest's twelve rows are already committed, so a
+        # raise here would return 500 with no Set-Cookie and leave that row
+        # orphaned -- the exact failure the pending-cookie machinery above
+        # exists to prevent, reintroduced by a best-effort repair. The feed
+        # is self-healing: the next mint reconciles again.
+        try:
+            await request.app.state.reconciler.reconcile()
+        except Exception:
+            logger.exception("Post-mint reconcile failed; the guest keeps its session")
     else:
         await store.touch(user)
 

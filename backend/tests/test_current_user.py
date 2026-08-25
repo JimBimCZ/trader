@@ -226,3 +226,42 @@ class TestSecureFlagFollowsTheScheme:
         )
 
         assert "Secure" not in response.headers["set-cookie"]
+
+
+class TestAFailedReconcileDoesNotCostTheGuestItsSession:
+    """The guest's rows commit before the feed is reconciled.
+
+    `mint_guest` commits twelve rows, and only then does the dependency
+    reconcile the market source. That reconcile is a live database query, so
+    on Neon a transient connection failure is an ordinary event rather than a
+    theoretical one. Letting it raise would return 500 with no `Set-Cookie`
+    and leave the committed profile orphaned -- which is exactly the failure
+    the pending-cookie machinery exists to prevent, reintroduced through a
+    best-effort repair path.
+    """
+
+    def test_the_cookie_is_still_issued_when_the_reconcile_raises(self, settings, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from app.main import create_app
+        from app.reconcile import TickerReconciler
+
+        async def boom(self):
+            raise RuntimeError("simulated reconcile failure")
+
+        monkeypatch.setattr(TickerReconciler, "reconcile", boom)
+
+        try:
+            with TestClient(create_app(settings), base_url="http://localhost") as client:
+                response = client.get("/api/portfolio")
+
+            assert response.status_code == 200
+            assert COOKIE_NAME in response.cookies, (
+                "a committed guest was left without a session cookie"
+            )
+        finally:
+            import asyncio
+
+            from tests.conftest import _drop_schema
+
+            asyncio.run(_drop_schema(settings.database_url, settings.db_schema))
