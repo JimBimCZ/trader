@@ -39,7 +39,10 @@ export function TradeBar() {
 
   return (
     <section className="rise card px-4 py-3" aria-label="Trade">
-      <div className="flex flex-wrap items-end gap-3">
+      {/* Sized to stay on one line at the workspace's own column width
+          (~530px at a 1440px viewport). Wrapping costs ~56px of vertical
+          space, which comes straight out of the chart rows below. */}
+      <div className="flex flex-wrap items-end gap-x-2.5 gap-y-3">
         <label className="flex flex-col gap-1.5">
           <span className="field-label">Symbol</span>
           <input
@@ -52,7 +55,7 @@ export function TradeBar() {
             maxLength={5}
             aria-label="Ticker to trade"
             data-testid="trade-ticker"
-            className="field w-28 font-semibold uppercase tracking-wide placeholder:font-normal placeholder:normal-case"
+            className="field w-24 font-semibold uppercase tracking-wide placeholder:font-normal placeholder:normal-case"
           />
         </label>
 
@@ -70,7 +73,7 @@ export function TradeBar() {
             placeholder="0"
             aria-label="Quantity to trade"
             data-testid="trade-quantity"
-            className="field w-28"
+            className="field w-24"
           />
         </label>
 
@@ -94,7 +97,7 @@ export function TradeBar() {
             disabled={!valid || pending}
             onClick={() => submit("sell")}
             data-testid="sell-button"
-            className="flex-1 py-1.5 sm:w-24 sm:flex-none"
+            className="flex-1 py-1.5 sm:w-[86px] sm:flex-none"
           >
             Sell
           </Button>
@@ -103,7 +106,7 @@ export function TradeBar() {
             disabled={!valid || pending}
             onClick={() => submit("buy")}
             data-testid="buy-button"
-            className="flex-1 py-1.5 sm:w-24 sm:flex-none"
+            className="flex-1 py-1.5 sm:w-[86px] sm:flex-none"
           >
             Buy
           </Button>
