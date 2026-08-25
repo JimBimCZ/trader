@@ -148,7 +148,10 @@ rewrite is what sends `/api/*` to it and nothing else.
 vercel.json        build, rewrite, function limits, non-secret env, and the daily
                     guest-cleanup Cron entry (`0 4 * * *` → `GET /api/admin/cleanup`;
                     set `CRON_SECRET` so it can authenticate itself, per §3)
-requirements.txt   the function's dependencies — deliberately not the backend's full set
+requirements.txt   the function's dependencies — deliberately not the backend's full set,
+                    and so free to drift from backend/pyproject.toml; a dependency added
+                    there and imported at module scope breaks every route here, which
+                    backend/tests/test_vercel_requirements.py now catches
 api/index.py       puts backend/ on the import path and exposes app.main:app
 ```
 

@@ -9,3 +9,7 @@ fastapi>=0.115.0
 pydantic>=2.9.0
 python-dotenv>=1.0.0
 asyncpg>=0.30.0
+# Signs the trader_session cookie. Imported at module scope by
+# app/identity/cookie.py, so its absence is not a degraded feature -- it is
+# every /api/* route returning 500 on a failed import of app.main.
+itsdangerous>=2.2.0
