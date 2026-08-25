@@ -80,12 +80,28 @@ class TestMe:
         assert COOKIE_NAME in api_client.cookies
 
 
+def _session_cookies(response) -> list[str]:
+    """Every `Set-Cookie: trader_session=...` on a response, not just the last.
+
+    A route that accidentally also depended on `CurrentUserDep` would emit a
+    second one naming the old user -- see the module docstring on
+    `app.auth.router`. This is what makes that regression fail loudly instead
+    of only in code review.
+    """
+    return [
+        value
+        for value in response.headers.get_list("set-cookie")
+        if value.startswith(f"{COOKIE_NAME}=")
+    ]
+
+
 class TestCallback:
     def test_a_new_identity_promotes_the_guest_in_place(self, auth_client):
         before = auth_client.get("/api/auth/me").json()
         response = auth_client.get("/api/auth/callback/google?sub=sub-1", follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"] == "/"
+        assert len(_session_cookies(response)) == 1
         after = auth_client.get("/api/auth/me").json()
         assert after["id"] == before["id"]
         assert after["kind"] == "user"
@@ -113,7 +129,9 @@ class TestCallback:
         response = auth_client.get("/api/auth/callback/google?sub=sub-1", follow_redirects=False)
         assert response.status_code == 307
         assert response.headers["location"].startswith("/?claim=conflict&token=")
-        # The cookie is untouched until the user confirms.
+        # No Set-Cookie at all: the guest keeps its session, untouched, until
+        # it confirms via /api/auth/claim (D-2).
+        assert len(_session_cookies(response)) == 0
         assert auth_client.get("/api/auth/me").json()["id"] == contested["id"]
 
         token = response.headers["location"].split("token=")[1]

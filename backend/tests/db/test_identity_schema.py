@@ -12,7 +12,7 @@ class TestFreshSchema:
     async def test_oauth_identities_exists(self, db):
         row = await db.fetch_one(
             "SELECT COUNT(*) AS n FROM information_schema.tables "
-            "WHERE table_name = 'oauth_identities'"
+            "WHERE table_name = 'oauth_identities' AND table_schema = current_schema()"
         )
         assert row["n"] == 1
 
@@ -20,7 +20,8 @@ class TestFreshSchema:
     async def test_users_profile_carries_the_identity_columns(self, db, column):
         row = await db.fetch_one(
             "SELECT COUNT(*) AS n FROM information_schema.columns "
-            "WHERE table_name = 'users_profile' AND column_name = $1",
+            "WHERE table_name = 'users_profile' AND column_name = $1 "
+            "AND table_schema = current_schema()",
             (column,),
         )
         assert row["n"] == 1
