@@ -1,6 +1,6 @@
 # Frontend — Component Summary
 
-Status: **complete**. 153 unit tests, 24 E2E, eslint and tsc clean, static export builds to
+Status: **complete**. 228 unit tests, 27 E2E, eslint and tsc clean, static export builds to
 121 kB first load for the workspace (106 kB for `/privacy/`) and ships no font files.
 
 ## Structure

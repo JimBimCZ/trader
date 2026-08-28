@@ -1,4 +1,4 @@
-import { test, expect, waitForPrice } from "./fixtures";
+import { test, expect, dismissReceipt, waitForPrice } from "./fixtures";
 
 test.describe("Stream resilience", () => {
   test("reports a dropped stream and recovers on its own", async ({ app }) => {
@@ -35,6 +35,7 @@ test.describe("Stream resilience", () => {
     await app.getByTestId("trade-ticker").fill("MSFT");
     await app.getByTestId("trade-quantity").fill("1");
     await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
     await expect(app.getByTestId("position-MSFT")).toBeVisible();
 
     await app.reload();

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { executeTrade, fetchPortfolio, fetchPortfolioHistory } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { LoadState, Portfolio, Position, SnapshotPoint } from "@/lib/types";
+import type { LoadState, Portfolio, Position, SnapshotPoint, TradeReceipt } from "@/lib/types";
 
 interface PortfolioState {
   cashBalance: number;
@@ -18,10 +18,15 @@ interface PortfolioState {
   historyStatus: LoadState;
   tradeError: string | null;
   tradePending: boolean;
+  /** The last fill placed from the trade ticket, until the user dismisses it.
+   *  Only the ticket writes it -- the assistant's trades go through
+   *  `/api/chat` and report themselves inline in the conversation. */
+  lastTrade: TradeReceipt | null;
   refresh: () => Promise<void>;
   refreshHistory: () => Promise<void>;
   trade: (ticker: string, side: "buy" | "sell", quantity: number) => Promise<boolean>;
   clearTradeError: () => void;
+  dismissTrade: () => void;
 }
 
 function applyPortfolio(portfolio: Portfolio) {
@@ -44,6 +49,7 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   historyStatus: "pending" as LoadState,
   tradeError: null,
   tradePending: false,
+  lastTrade: null,
 
   refresh: async () => {
     try {
@@ -67,14 +73,20 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
     set({ tradePending: true, tradeError: null });
 
     // Placing the order is the only step that can fail the trade.
+    let receipt;
     try {
-      await executeTrade(ticker, side, quantity);
+      receipt = await executeTrade(ticker, side, quantity);
     } catch (error) {
       const message =
         error instanceof ApiError ? error.message : "The trade could not be completed.";
       set({ tradeError: message, tradePending: false });
       return false;
     }
+
+    // Shown before the re-reads rather than after them: the receipt describes
+    // the fill, which the response above already settled, so it neither waits
+    // on those two calls nor becomes wrong when one of them fails.
+    set({ lastTrade: receipt });
 
     // From here the order has filled: the server has already moved the cash
     // and the position. The two calls below only re-read that result, so
@@ -92,4 +104,6 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   },
 
   clearTradeError: () => set({ tradeError: null }),
+
+  dismissTrade: () => set({ lastTrade: null }),
 }));

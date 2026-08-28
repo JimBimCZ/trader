@@ -8,8 +8,10 @@ import type {
   Portfolio,
   Position,
   RawPosition,
+  RawTradeReceipt,
   Session,
   SnapshotPoint,
+  TradeReceipt,
 } from "../types";
 
 function toPosition(raw: RawPosition): Position {
@@ -57,8 +59,27 @@ export async function executeTrade(
   ticker: string,
   side: "buy" | "sell",
   quantity: number,
-): Promise<void> {
-  await api.post("/api/portfolio/trade", { ticker, side, quantity });
+): Promise<TradeReceipt> {
+  const raw = await api.post<RawTradeReceipt>("/api/portfolio/trade", {
+    ticker,
+    side,
+    quantity,
+  });
+  return {
+    id: raw.trade.id,
+    ticker: raw.trade.ticker,
+    side: raw.trade.side,
+    quantity: raw.trade.quantity,
+    price: raw.trade.price,
+    executedAt: raw.trade.executed_at,
+    cashBalance: raw.cash_balance,
+    position: raw.position && {
+      quantity: raw.position.quantity,
+      avgCost: raw.position.avg_cost,
+    },
+    realizedPnl: raw.realized_pnl,
+    totalValue: raw.total_value,
+  };
 }
 
 export async function fetchPortfolioHistory(limit = 500): Promise<SnapshotPoint[]> {

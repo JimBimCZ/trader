@@ -14,6 +14,7 @@ import { Footer } from "@/components/layout/Footer";
 import { ThemeSync } from "@/components/layout/ThemeSync";
 import { BootScreen } from "@/components/layout/BootScreen";
 import { ClaimConflictDialog } from "@/components/layout/ClaimConflictDialog";
+import { TradeReceiptDialog } from "@/components/trade/TradeReceiptDialog";
 import { CHART_MIN_H, PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
 import { PositionsTable } from "@/components/portfolio/PositionsTable";
@@ -80,6 +81,7 @@ export default function Page() {
       <ThemeSync />
       <BootScreen done={booted} />
       <ClaimConflictDialog />
+      <TradeReceiptDialog />
       <Rail />
 
       <div className="flex min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
