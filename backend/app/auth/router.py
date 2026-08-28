@@ -15,6 +15,7 @@ once, on the response they return.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -60,6 +61,40 @@ async def _session_user(request: Request) -> User | None:
     if not user_id:
         return None
     return await request.app.state.user_store.get(user_id)
+
+
+#: Marks a login request that has already been moved to the canonical origin
+#: once. `PUBLIC_BASE_URL` exists for a proxy that rewrites the host, and
+#: there the origin comparison can never come out equal -- so the bounce has
+#: to be ended by something the first hop carries, not by the comparison that
+#: caused it, or a misconfigured deployment redirects the browser to itself
+#: for ever.
+_CANONICAL_MARKER = "canonical"
+
+
+def _canonical_login_url(request: Request, provider: str) -> str | None:
+    """Where to restart a flow that began on the wrong hostname, or None.
+
+    `_callback_url` pins where the provider sends the browser back, but the
+    state and the PKCE verifier travel in the `trader_oauth` cookie, which is
+    host-only. A deployment answering on more than one hostname -- Vercel
+    gives every project at least three, and any custom domain adds more --
+    therefore has exactly one host where sign-in can complete: start anywhere
+    else and the cookie is written where the callback will never be read
+    from, so Authlib finds no stored state and every attempt fails
+    `AUTH_STATE_INVALID`.
+
+    Registering the other hostnames with the provider is not the fix: each
+    would need its own pre-registered redirect URI, which a per-deployment
+    preview URL cannot have. Move the browser to the pinned origin before
+    minting any state instead, so the cookie and the callback share a host.
+    """
+    configured = request.app.state.settings.public_base_url.strip().rstrip("/")
+    if not configured or _CANONICAL_MARKER in request.query_params:
+        return None
+    if request.url.netloc == urlsplit(configured).netloc:
+        return None
+    return f"{configured}/api/auth/login/{provider}?{_CANONICAL_MARKER}=1"
 
 
 def _callback_url(request: Request, provider: str) -> str:
@@ -148,6 +183,16 @@ async def login(request: Request, provider: str):
     from a static export with no Node runtime and no `postMessage` channel.
     """
     client = _client(request, provider)
+
+    # Before the provider, and before any state exists: a flow that starts on
+    # the wrong hostname cannot be rescued at the callback, because by then
+    # the cookie holding the state is on a host the browser will not send it
+    # from. The unknown-provider 404 above stays a 404 rather than bouncing
+    # the browser to another host to discover the same thing.
+    canonical = _canonical_login_url(request, provider)
+    if canonical is not None:
+        return RedirectResponse(canonical, status_code=307)
+
     return await client.authorize_redirect(request, _callback_url(request, provider))
 
 

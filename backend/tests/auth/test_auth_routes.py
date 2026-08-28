@@ -10,6 +10,15 @@ from app.auth.providers import OAuthProfile
 from app.identity import COOKIE_NAME
 from tests.conftest import CLIENT_BASE_URL, _drop_schema
 
+#: A deployment pinned to one origin, and a second hostname the same
+#: deployment also answers on.
+CANONICAL = "https://canonical.example"
+ALIAS = "https://alias.example"
+
+#: Where the stubbed provider hand-off lands, so a test can tell "went to
+#: the provider" from "was moved to another host of our own".
+PROVIDER_AUTHORIZE = "https://provider.example/authorize"
+
 
 @pytest.fixture
 def configured_settings(settings):
@@ -63,6 +72,90 @@ class TestProviders:
         response = api_client.get("/api/auth/login/google", follow_redirects=False)
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "AUTH_PROVIDER_UNAVAILABLE"
+
+
+class TestLoginOrigin:
+    """Which host a flow is allowed to start on.
+
+    The callback URL is pinned by `PUBLIC_BASE_URL`, but the state and the
+    PKCE verifier ride back in a host-only cookie set by the login response.
+    A deployment answering on several hostnames -- Vercel gives every project
+    at least three -- therefore has one host where sign-in completes and
+    others where the cookie is written somewhere the callback can never read
+    it, and the flow fails `AUTH_STATE_INVALID` every single time.
+    """
+
+    @pytest.fixture
+    def make_client(self, configured_settings, monkeypatch):
+        """Clients on arbitrary hosts, with the provider hand-off stubbed.
+
+        `_client` is replaced rather than the route: these tests are only
+        about which host the flow starts on, and the real
+        `authorize_redirect` would fetch Google's discovery document over the
+        network to answer.
+        """
+        import asyncio
+        from contextlib import ExitStack
+
+        from fastapi.responses import RedirectResponse
+        from fastapi.testclient import TestClient
+
+        from app.auth import router as router_module
+        from app.main import create_app
+
+        class _StubProvider:
+            async def authorize_redirect(self, request, redirect_uri):
+                return RedirectResponse(PROVIDER_AUTHORIZE, status_code=302)
+
+        monkeypatch.setattr(router_module, "_client", lambda request, provider: _StubProvider())
+
+        stack = ExitStack()
+
+        def make(*, host: str, public_base_url: str) -> TestClient:
+            settings = dataclasses.replace(configured_settings, public_base_url=public_base_url)
+            return stack.enter_context(TestClient(create_app(settings), base_url=host))
+
+        try:
+            yield make
+        finally:
+            stack.close()
+            asyncio.run(
+                _drop_schema(configured_settings.database_url, configured_settings.db_schema)
+            )
+
+    def test_a_flow_started_on_another_host_moves_to_the_canonical_one(self, make_client):
+        client = make_client(host=ALIAS, public_base_url=CANONICAL)
+        response = client.get("/api/auth/login/google", follow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers["location"] == f"{CANONICAL}/api/auth/login/google?canonical=1"
+
+    def test_a_trailing_slash_on_the_setting_is_not_doubled(self, make_client):
+        client = make_client(host=ALIAS, public_base_url=f"{CANONICAL}/")
+        response = client.get("/api/auth/login/google", follow_redirects=False)
+        assert response.headers["location"] == f"{CANONICAL}/api/auth/login/google?canonical=1"
+
+    def test_the_canonical_host_hands_off_to_the_provider(self, make_client):
+        client = make_client(host=CANONICAL, public_base_url=CANONICAL)
+        response = client.get("/api/auth/login/google", follow_redirects=False)
+        assert response.headers["location"] == PROVIDER_AUTHORIZE
+
+    def test_the_bounce_happens_at_most_once(self, make_client):
+        """The marker, not the host, is what ends the bounce.
+
+        `PUBLIC_BASE_URL` exists for a proxy that rewrites the host, and there
+        the comparison can never come out equal -- so a guard that trusted it
+        alone would redirect the browser to itself for ever.
+        """
+        client = make_client(host=ALIAS, public_base_url=CANONICAL)
+        response = client.get("/api/auth/login/google?canonical=1", follow_redirects=False)
+        assert response.headers["location"] == PROVIDER_AUTHORIZE
+
+    def test_an_unpinned_deployment_starts_where_it_is_asked(self, make_client):
+        """With nothing pinned the callback is derived from the request, so
+        every host is its own canonical one -- Docker, and local dev."""
+        client = make_client(host=ALIAS, public_base_url="")
+        response = client.get("/api/auth/login/google", follow_redirects=False)
+        assert response.headers["location"] == PROVIDER_AUTHORIZE
 
 
 class TestMe:
