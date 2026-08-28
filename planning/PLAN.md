@@ -282,7 +282,11 @@ AUTH_MOCK=false
   does out of the box — no sign-in control is rendered at all.
 - `PUBLIC_BASE_URL`, when set, wins over deriving the callback origin from the incoming request —
   needed behind a proxy that rewrites the host, where the derived origin would be one the provider
-  rejects.
+  rejects. *Revised 2026-08-28:* it also decides where a sign-in may **start**. The
+  state and PKCE verifier ride in a host-only cookie, so a flow begun on any other hostname the
+  deployment answers on writes that cookie where the callback can never read it and fails
+  `AUTH_STATE_INVALID` every time; `GET /api/auth/login/{provider}` now moves such a browser to
+  this origin first. See `planning/API_CONTRACT.md` §0.1.
 - `AUTH_MOCK=true` enables `GET /api/auth/dev-login/{user_id}`, unauthenticated session forgery
   used by the E2E suite to move a session to a known user without a real provider round trip. The
   route answers 404 when this is unset (the default), so a production deployment does not even

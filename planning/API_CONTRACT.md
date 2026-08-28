@@ -106,6 +106,22 @@ which is not renderable. `provider` not in `{google, github}`, or configured wit
 this deployment, → `AUTH_PROVIDER_UNAVAILABLE` (404): the route genuinely does not exist here, which
 lets the frontend simply not render a button for it rather than render one that dead-ends.
 
+*Revised 2026-08-28: one case answers `307` to this same route on another host instead.* When
+`PUBLIC_BASE_URL` is set and the request arrived on a **different** origin, the response is
+`307` to `{PUBLIC_BASE_URL}/api/auth/login/{provider}?canonical=1`, with no state minted and no
+cookie set. `PUBLIC_BASE_URL` pins where the provider sends the browser back, but the state and
+the PKCE verifier travel in the host-only `trader_oauth` cookie — so a deployment answering on
+several hostnames (Vercel gives every project at least three) has exactly one host where sign-in
+can complete, and starting anywhere else wrote that cookie where the callback could never read it.
+Every such attempt failed `AUTH_STATE_INVALID`, which reads as "expired" and is not. Registering
+the other hostnames with the provider is not the alternative: each needs its own pre-registered
+redirect URI, which a per-deployment preview URL cannot have.
+
+The `canonical=1` marker, not the origin comparison, is what ends the bounce — `PUBLIC_BASE_URL`
+exists for a proxy that rewrites the host, and there the comparison can never come out equal. With
+`PUBLIC_BASE_URL` empty the callback is derived from the request, so every host is its own
+canonical one and this redirect never happens; that is the Docker and local-dev path.
+
 ### `GET /api/auth/callback/{provider}`
 
 Where the provider sends the browser back. Trades the code for a token, reduces the provider's
