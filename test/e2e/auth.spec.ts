@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { dismissReceipt } from "./fixtures";
 
 test.describe("guest sessions", () => {
   test("two browsers get two portfolios", async ({ browser }) => {
@@ -12,6 +13,7 @@ test.describe("guest sessions", () => {
     await a.getByTestId("trade-ticker").fill("AAPL");
     await a.getByTestId("trade-quantity").fill("2");
     await a.getByTestId("buy-button").click();
+    await dismissReceipt(a);
     await expect(a.getByTestId("position-AAPL")).toBeVisible();
 
     const b = await second.newPage();
@@ -27,6 +29,7 @@ test.describe("guest sessions", () => {
     await page.getByTestId("trade-ticker").fill("MSFT");
     await page.getByTestId("trade-quantity").fill("1");
     await page.getByTestId("buy-button").click();
+    await dismissReceipt(page);
     await expect(page.getByTestId("position-MSFT")).toBeVisible();
 
     await page.reload();

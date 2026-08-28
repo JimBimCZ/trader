@@ -73,6 +73,44 @@ export interface Portfolio {
   unrealizedPnl: number;
 }
 
+export interface RawTradeReceipt {
+  trade: {
+    id: string;
+    ticker: string;
+    side: "buy" | "sell";
+    quantity: number;
+    price: number;
+    executed_at: string;
+  };
+  cash_balance: number;
+  position: { ticker: string; quantity: number; avg_cost: number } | null;
+  realized_pnl: number | null;
+  total_value: number;
+}
+
+/**
+ * What a fill actually was, flattened from the response.
+ *
+ * Distinct from `Portfolio`, which says what the account holds *now*: this
+ * says what the user just did, and stays true even when the re-reads that
+ * follow the trade fail.
+ */
+export interface TradeReceipt {
+  id: string;
+  ticker: string;
+  side: "buy" | "sell";
+  quantity: number;
+  /** The fill price -- the cached quote read once immediately before execution. */
+  price: number;
+  executedAt: string;
+  cashBalance: number;
+  /** null when a sell closed the position entirely. */
+  position: { quantity: number; avgCost: number } | null;
+  /** Populated on sells, null on buys. Computed by the server, never stored. */
+  realizedPnl: number | null;
+  totalValue: number;
+}
+
 export interface SnapshotPoint {
   totalValue: number;
   recordedAt: string;

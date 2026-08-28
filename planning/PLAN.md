@@ -628,6 +628,15 @@ include these elements:
   joined in a segmented track. They are two actions rather than two states of one choice, so each
   half stays its own button with its own direction fill; the track is only what says they are a
   pair. Market orders, instant fill.
+- **Trade receipt** *(added 2026-08-28)* — a modal raised by a filled ticket order, naming it in
+  the past tense the way the assistant's inline receipts do ("Bought 10 AAPL"), over the fill
+  price, order value, resulting position or "Closed", and the cash left. Realized P&L appears on
+  sells only, signed and glyphed; a buy realizes nothing and shows no row rather than a dash the
+  reader has to interpret. Every figure comes from the trade response, not from the portfolio
+  re-read that follows, so it stays true when that re-read fails. Dismissed by Done, Escape, or
+  the backdrop — three ways out, because unlike the sign-in conflict dialog this one appears after
+  *every* ticket trade. Ticket trades only: the assistant's trades already report themselves in
+  the conversation, and a dialog raised by a chat reply would interrupt rather than answer.
 - **AI chat panel** — docked/collapsible sidebar with an avatar, iOS message bubbles (the user's
   filled in the interaction colour, the assistant's in the neutral fill, each tightening its
   corner into a tail), suggested opening prompts as tinted capsules, and a loading indicator
@@ -780,6 +789,9 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 - Portfolio display calculations
 - Chat message rendering and loading state, including that a rejected action is named in the
   tense that is true rather than reported as done
+- The trade receipt: the tense of each side, realized P&L present on sells and absent on buys, a
+  closed position named as closed, each of the three ways out — and that a rejected order raises
+  no receipt at all
 - Every coloured value carries its sign and arrow glyph, so meaning survives without colour
 - The heatmap's colour scale, tested directly rather than through the charting library
 - The palette itself: every foreground/background pairing the app renders small text in clears

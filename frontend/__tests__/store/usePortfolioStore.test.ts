@@ -11,6 +11,20 @@ import * as endpoints from "@/lib/api/endpoints";
  * already moved -- one that invites the user to place the same order twice.
  */
 
+/** A fill the server accepted, as `executeTrade` hands it back. */
+const FILLED = {
+  id: "trade-1",
+  ticker: "AAPL",
+  side: "buy" as const,
+  quantity: 10,
+  price: 191.24,
+  executedAt: "2026-08-28T09:14:03Z",
+  cashBalance: 8087.6,
+  position: { quantity: 10, avgCost: 191.24 },
+  realizedPnl: null,
+  totalValue: 10012.4,
+};
+
 const realRefresh = usePortfolioStore.getState().refresh;
 const realRefreshHistory = usePortfolioStore.getState().refreshHistory;
 
@@ -32,7 +46,7 @@ afterEach(() => {
 
 describe("a trade that the server accepted", () => {
   beforeEach(() => {
-    vi.spyOn(endpoints, "executeTrade").mockResolvedValue(undefined);
+    vi.spyOn(endpoints, "executeTrade").mockResolvedValue(FILLED);
   });
 
   it("is reported as filled even when the portfolio re-read fails", async () => {
@@ -119,7 +133,7 @@ describe("a trade the server refused", () => {
 
 describe("the pending flag", () => {
   it("clears after a fill whose re-read failed", async () => {
-    vi.spyOn(endpoints, "executeTrade").mockResolvedValue(undefined);
+    vi.spyOn(endpoints, "executeTrade").mockResolvedValue(FILLED);
     vi.spyOn(endpoints, "fetchPortfolio").mockRejectedValue(new Error("TIMEOUT"));
     vi.spyOn(endpoints, "fetchPortfolioHistory").mockRejectedValue(new Error("TIMEOUT"));
 
@@ -136,5 +150,58 @@ describe("the pending flag", () => {
     await usePortfolioStore.getState().trade("AAPL", "buy", 1);
 
     expect(usePortfolioStore.getState().tradePending).toBe(false);
+  });
+});
+
+/**
+ * The receipt the trade ticket shows after a fill.
+ *
+ * Taken from the trade response rather than from the re-reads that follow
+ * it: those describe the portfolio *now*, which is not what the user just
+ * did, and either of them can fail without the fill being any less real.
+ */
+describe("the receipt a filled trade leaves behind", () => {
+  beforeEach(() => {
+    usePortfolioStore.setState({ lastTrade: null });
+    vi.spyOn(endpoints, "executeTrade").mockResolvedValue(FILLED);
+    vi.spyOn(endpoints, "fetchPortfolio").mockResolvedValue({
+      cashBalance: 8087.6,
+      positions: [],
+      positionsValue: 0,
+      totalValue: 10012.4,
+      unrealizedPnl: 0,
+    });
+    vi.spyOn(endpoints, "fetchPortfolioHistory").mockResolvedValue([]);
+  });
+
+  it("carries what the server said it filled", async () => {
+    await usePortfolioStore.getState().trade("AAPL", "buy", 10);
+    expect(usePortfolioStore.getState().lastTrade).toEqual(FILLED);
+  });
+
+  it("survives a portfolio re-read that failed", async () => {
+    vi.spyOn(endpoints, "fetchPortfolio").mockRejectedValue(new Error("TIMEOUT"));
+
+    await usePortfolioStore.getState().trade("AAPL", "buy", 10);
+
+    expect(usePortfolioStore.getState().lastTrade).toEqual(FILLED);
+  });
+
+  it("is not left behind by an order the server rejected", async () => {
+    vi.spyOn(endpoints, "executeTrade").mockRejectedValue(
+      new ApiError("INSUFFICIENT_CASH", "Not enough cash.", 400),
+    );
+
+    await usePortfolioStore.getState().trade("AAPL", "buy", 10);
+
+    expect(usePortfolioStore.getState().lastTrade).toBeNull();
+  });
+
+  it("is cleared when the user dismisses it", async () => {
+    await usePortfolioStore.getState().trade("AAPL", "buy", 10);
+
+    usePortfolioStore.getState().dismissTrade();
+
+    expect(usePortfolioStore.getState().lastTrade).toBeNull();
   });
 });

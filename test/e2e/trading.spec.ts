@@ -1,4 +1,4 @@
-import { test, expect, waitForPrice } from "./fixtures";
+import { test, expect, dismissReceipt, waitForPrice } from "./fixtures";
 
 test.describe("Trading", () => {
   test("buying reduces cash and opens a position", async ({ app }) => {
@@ -7,6 +7,7 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-ticker").fill("AAPL");
     await app.getByTestId("trade-quantity").fill("10");
     await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
 
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
     await expect(app.getByTestId("position-AAPL")).toContainText("10");
@@ -25,10 +26,12 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-ticker").fill("AAPL");
     await app.getByTestId("trade-quantity").fill("5");
     await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
 
     await app.getByTestId("trade-quantity").fill("5");
     await app.getByTestId("sell-button").click();
+    await dismissReceipt(app);
 
     await expect(app.getByTestId("position-AAPL")).toHaveCount(0);
     await expect
@@ -66,6 +69,7 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-ticker").fill("NVDA");
     await app.getByTestId("trade-quantity").fill("2");
     await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
 
     await expect(app.getByTestId("position-NVDA")).toBeVisible();
     // Every heatmap cell carries a signed percentage, not colour alone.
@@ -79,6 +83,7 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-ticker").fill("TSLA");
     await app.getByTestId("trade-quantity").fill("2");
     await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
     await expect(app.getByTestId("position-TSLA")).toBeVisible();
 
     await app.getByTestId("watchlist-row-TSLA").hover();
@@ -89,5 +94,53 @@ test.describe("Trading", () => {
     await expect(app.getByTestId("position-TSLA")).toBeVisible();
     await expect(app.getByTestId("position-TSLA")).toContainText("unwatched");
     await expect(app.getByTestId("position-TSLA")).toContainText("$");
+  });
+
+  test("a filled order reports itself", async ({ app }) => {
+    await waitForPrice(app, "AAPL");
+
+    await app.getByTestId("trade-ticker").fill("AAPL");
+    await app.getByTestId("trade-quantity").fill("3");
+    await app.getByTestId("buy-button").click();
+
+    const receipt = app.getByTestId("trade-receipt");
+    await expect(receipt).toContainText("Bought 3 AAPL");
+    // The fill price, not a placeholder: the receipt reads the trade
+    // response, so it is populated before the portfolio re-read lands.
+    await expect(app.getByTestId("receipt-price")).toContainText("$");
+    await expect(app.getByTestId("receipt-cash")).toContainText("$");
+
+    await dismissReceipt(app);
+  });
+
+  test("a receipt says so when the sell closed the position", async ({ app }) => {
+    await waitForPrice(app, "NVDA");
+
+    await app.getByTestId("trade-ticker").fill("NVDA");
+    await app.getByTestId("trade-quantity").fill("4");
+    await app.getByTestId("buy-button").click();
+    await dismissReceipt(app);
+
+    await app.getByTestId("trade-quantity").fill("4");
+    await app.getByTestId("sell-button").click();
+
+    await expect(app.getByTestId("trade-receipt")).toContainText("Sold 4 NVDA");
+    await expect(app.getByTestId("receipt-position")).toContainText("Closed");
+    // Realized P&L is a sell-only figure, and carries its sign rather than
+    // relying on colour.
+    await expect(app.getByTestId("receipt-realized")).toContainText(/[+-]\$/);
+
+    await dismissReceipt(app);
+  });
+
+  test("a rejected order raises no receipt", async ({ app }) => {
+    await waitForPrice(app, "AAPL");
+
+    await app.getByTestId("trade-ticker").fill("AAPL");
+    await app.getByTestId("trade-quantity").fill("100000");
+    await app.getByTestId("buy-button").click();
+
+    await expect(app.getByTestId("trade-error")).toContainText("available");
+    await expect(app.getByTestId("trade-receipt")).toHaveCount(0);
   });
 });
