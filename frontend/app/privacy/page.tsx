@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 /** Kept beside the prose so the two cannot drift apart silently. */
-const LAST_UPDATED = "25 August 2026";
+const LAST_UPDATED = "1 September 2026";
 const CONTACT = "busek.vit@gmail.com";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -85,9 +85,10 @@ export default function PrivacyPage() {
             cookies, no advertising cookies, and no third-party trackers on any page of this app.
           </p>
           <p>
-            Two more short-lived cookies exist only during a sign-in, to carry the OAuth state and
-            verifier that prove the round trip came back to the same browser that started it. They
-            are discarded as soon as the sign-in completes.
+            One further cookie, <code>trader_oauth</code>, is written only while a sign-in is in
+            progress. It carries the OAuth state and the verifier that together prove the round
+            trip came back to the same browser that started it. It is cleared when the sign-in
+            finishes, and expires by itself within ten minutes either way.
           </p>
         </Section>
 

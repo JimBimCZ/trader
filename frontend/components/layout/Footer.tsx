@@ -13,7 +13,7 @@ export function Footer() {
     <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t-hairline border-border px-1 pt-2 text-[11px] text-text-muted">
       <p>Simulated trading with virtual money — not financial advice.</p>
       <Link href="/privacy/" className="text-blue-text hover:underline">
-        Privacy
+        Privacy Policy
       </Link>
     </footer>
   );
