@@ -162,12 +162,19 @@ def db_schema() -> str:
 
 @pytest.fixture
 def settings(db_schema: str) -> Settings:
-    """Settings pointed at a throwaway schema, with the LLM mocked."""
+    """Settings pointed at a throwaway schema, with the LLM mocked.
+
+    demo_portfolio=False: this suite was written against the pre-demo seeding
+    baseline (fresh guest == initial_cash, no positions), and most of it is
+    still testing that baseline rather than the demo. Tests that want the
+    demo opt in explicitly via `seed_user(..., demo=True)`.
+    """
     return Settings(
         database_url=TEST_DSN,
         db_schema=db_schema,
         llm_mock=True,
         sim_seed=1234,
+        demo_portfolio=False,
     )
 
 

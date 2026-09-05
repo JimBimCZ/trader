@@ -7,6 +7,7 @@ Public API:
     run_migrations    - apply forward-only schema changes (idempotent)
     seed_user         - write the default watchlist for one user
     DEFAULT_WATCHLIST - the ten starting tickers
+    DEMO_HOLDINGS     - the four positions a demo guest opens on
 """
 
 from __future__ import annotations
@@ -14,10 +15,11 @@ from __future__ import annotations
 from .connection import Database, init_db
 from .factory import open_database
 from .migrations import run_migrations
-from .seed import DEFAULT_WATCHLIST, seed_user
+from .seed import DEFAULT_WATCHLIST, DEMO_HOLDINGS, seed_user
 
 __all__ = [
     "DEFAULT_WATCHLIST",
+    "DEMO_HOLDINGS",
     "Database",
     "init_db",
     "open_database",

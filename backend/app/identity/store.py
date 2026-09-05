@@ -62,15 +62,15 @@ class UserStore:
                 "VALUES (?, ?, ?, 'guest', ?)",
                 (user_id, self._settings.initial_cash, now, now),
             )
-            await seed_user(self._db, self._settings, user_id)
+            await seed_user(self._db, self._settings, user_id, demo=self._settings.demo_portfolio)
         logger.info("Minted guest %s", user_id)
-        return User(
-            id=user_id,
-            cash_balance=self._settings.initial_cash,
-            kind="guest",
-            created_at=now,
-            last_seen_at=now,
-        )
+        # Re-read rather than construct: the demo seed moves cash_balance, and
+        # returning the pre-seed figure would put a stale number in front of
+        # the caller that resolves this user.
+        minted = await self.get(user_id)
+        if minted is None:  # pragma: no cover -- just committed
+            raise LookupError(f"Minted a guest that does not exist: {user_id}")
+        return minted
 
     async def touch(self, user: User) -> None:
         """Refresh last_seen_at, at most once per throttle window.

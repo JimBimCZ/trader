@@ -91,13 +91,28 @@ class ResetService:
                 # Updated, not deleted and recreated: deleting the profile
                 # cascades the user out of existence and invalidates their
                 # cookie, so a reset would silently log them out.
+                #
+                # A guest's reset restores the demo, because the demo IS
+                # their seeded starting state. A signed-in account's reset
+                # returns them to a clean initial_cash -- once the account is
+                # real, "reset" should not hand back a portfolio they never
+                # placed.
+                kind_row = await self._db.fetch_one(
+                    "SELECT kind FROM users_profile WHERE id = ?", (self._user_id,)
+                )
+                demo = (
+                    self._settings.demo_portfolio
+                    and kind_row is not None
+                    and kind_row["kind"] == "guest"
+                )
                 await self._db.execute(
                     "UPDATE users_profile SET cash_balance = ? WHERE id = ?",
                     (self._settings.initial_cash, self._user_id),
                 )
-                # seed_user writes the t=0 snapshot, so the chart is not
-                # empty between here and the writer's next tick.
-                await seed_user(self._db, self._settings, self._user_id)
+                # seed_user writes the t=0 snapshot (or the demo curve), so
+                # the chart is not empty between here and the writer's next
+                # tick.
+                await seed_user(self._db, self._settings, self._user_id, demo=demo)
 
             # Global, not per-user: the tickers this user released may still
             # be watched or held by someone else, and reconcile() is the only
