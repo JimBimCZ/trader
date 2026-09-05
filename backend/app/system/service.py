@@ -74,6 +74,28 @@ class ResetService:
         self._watchlist_lock = watchlist_lock
 
     async def reset(self) -> None:
+        """Wipe this user's state and re-seed them as their kind implies.
+
+        A guest gets the demo back, because the demo IS their seeded starting
+        state. A signed-in account does not: once the account is real,
+        "reset" should not hand back a portfolio they never placed.
+        """
+        kind_row = await self._db.fetch_one(
+            "SELECT kind FROM users_profile WHERE id = ?", (self._user_id,)
+        )
+        demo = (
+            self._settings.demo_portfolio and kind_row is not None and kind_row["kind"] == "guest"
+        )
+        await self._reset(demo=demo)
+
+    async def reset_to_clean(self) -> None:
+        """Wipe this user's state and re-seed them WITHOUT the demo.
+
+        What a guest's demo becomes at the moment their account turns real.
+        """
+        await self._reset(demo=False)
+
+    async def _reset(self, demo: bool) -> None:
         """Wipe this user's state, re-seed them, and reconcile globally."""
         async with self._trade_lock, self._watchlist_lock:
             # Delete and re-seed in ONE transaction: the profile row must
@@ -91,20 +113,6 @@ class ResetService:
                 # Updated, not deleted and recreated: deleting the profile
                 # cascades the user out of existence and invalidates their
                 # cookie, so a reset would silently log them out.
-                #
-                # A guest's reset restores the demo, because the demo IS
-                # their seeded starting state. A signed-in account's reset
-                # returns them to a clean initial_cash -- once the account is
-                # real, "reset" should not hand back a portfolio they never
-                # placed.
-                kind_row = await self._db.fetch_one(
-                    "SELECT kind FROM users_profile WHERE id = ?", (self._user_id,)
-                )
-                demo = (
-                    self._settings.demo_portfolio
-                    and kind_row is not None
-                    and kind_row["kind"] == "guest"
-                )
                 await self._db.execute(
                     "UPDATE users_profile SET cash_balance = ? WHERE id = ?",
                     (self._settings.initial_cash, self._user_id),
@@ -127,3 +135,22 @@ class ResetService:
             await self._reconciler.reconcile()
 
         logger.info("Reset %s to seeded state", self._user_id)
+
+
+def build_reset_service(request, user_id: str) -> ResetService:
+    """A ResetService for a user id, without going through CurrentUserDep.
+
+    The OAuth callback resolves its own session rather than depending on
+    `get_current_user` -- minting a guest mid-callback is precisely what it
+    must not do -- so it needs this seam. `deps.get_reset_service` calls it
+    too, so the argument list exists once.
+    """
+    state = request.app.state
+    return ResetService(
+        state.db,
+        state.settings,
+        user_id,
+        state.reconciler,
+        state.trade_lock,
+        state.watchlist_lock,
+    )
