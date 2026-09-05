@@ -6,6 +6,7 @@ import { PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
 import { TradeBar } from "@/components/trade/TradeBar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { ActivePositions } from "@/components/portfolio/ActivePositions";
 import { Tour } from "@/components/onboarding/Tour";
 
 // The chart bundles are the heaviest dependencies and none of them matter on
@@ -33,8 +34,12 @@ export default function Page() {
         <TradeBar />
       </div>
 
-      <div className="flex min-w-0 flex-col lg:min-h-0">
+      {/* Two equal rows, so the assistant gets half the column it used to
+          have all of and what is open gets the other half -- close to the
+          ticket that changes it, rather than a route away. */}
+      <div className="grid min-w-0 grid-cols-1 gap-3 lg:min-h-0 lg:grid-rows-2">
         <ChatPanel />
+        <ActivePositions />
       </div>
 
       <Tour />

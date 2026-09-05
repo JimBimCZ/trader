@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import {
   Area,
   AreaChart,
+  CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,9 +13,9 @@ import {
 } from "recharts";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
 import { usePalette } from "@/lib/useTheme";
-import { radii } from "@/lib/theme";
 import { formatCompact, formatIsoClock, formatPrice } from "@/lib/format";
 import { SignedValue } from "../ui/SignedValue";
+import { ChangeBadge } from "../ui/ChangeBadge";
 import { CHART_MIN_H } from "../layout/panels";
 import { Skeleton } from "../ui/Skeleton";
 import { LoadFailure } from "../ui/LoadFailure";
@@ -45,11 +47,54 @@ export function axisWidth(values: number[], range: number): number {
 }
 
 /**
+ * A portfolio drifts by tenths of a percent over a session, so `["auto",
+ * "auto"]` — which pins the extremes to the plot edges — draws that drift as a
+ * canyon touching both walls. Padding the domain gives the line somewhere to
+ * sit, and keeps the baseline rule visible when the whole series is above or
+ * below it.
+ */
+export function valueDomain(values: number[], baseline: number): [number, number] {
+  if (!values.length) return [0, 1];
+  const low = Math.min(baseline, ...values);
+  const high = Math.max(baseline, ...values);
+  // A flat series has no range to take a fraction of; fall back to something
+  // proportional to the account so the line lands mid-plot rather than on an
+  // edge.
+  const pad = high - low || Math.max(Math.abs(high) * 0.001, 0.5);
+  return [low - pad * 0.18, high + pad * 0.18];
+}
+
+/** The app's own card, rather than Recharts' default white box. */
+function ValueTooltip({
+  active,
+  payload,
+  label,
+  baseline,
+}: {
+  active?: boolean;
+  payload?: { value?: number }[];
+  label?: string;
+  baseline: number;
+}) {
+  const value = payload?.[0]?.value;
+  if (!active || typeof value !== "number") return null;
+  return (
+    <div className="card px-3 py-2 shadow-pop">
+      <p className="text-[11px] text-text-muted">{label}</p>
+      <p className="text-[15px] font-semibold tracking-[-0.02em] text-text">
+        {formatPrice(value)}
+      </p>
+      <SignedValue value={value - baseline} className="text-[11px] font-semibold" />
+    </div>
+  );
+}
+
+/**
  * Total portfolio value over time. Snapshots arrive every 30 seconds, so this
  * is declarative SVG rather than canvas.
  */
 export function PnlChart() {
-  const { colors, shadows } = usePalette();
+  const { colors } = usePalette();
   const history = usePortfolioStore((s) => s.history);
   // `historyStatus`, not `status`: this chart draws `history`, which comes
   // from its own endpoint fetched in the effect below -- while `status`
@@ -76,7 +121,8 @@ export function PnlChart() {
 
   const first = data[0]?.value ?? 0;
   const last = data[data.length - 1]?.value ?? 0;
-  const up = last >= first;
+  const change = last - first;
+  const up = change >= 0;
   const stroke = up ? colors.up : colors.down;
 
   const values = data.map((point) => point.value);
@@ -90,8 +136,10 @@ export function PnlChart() {
       <header className="card-title">
         <span>Performance</span>
         {data.length >= 2 && (
-          <span className="text-[11px] font-semibold">
-            <SignedValue value={last - first} /> this session
+          <span className="flex items-center gap-2 text-[11px] font-semibold">
+            <span className="font-normal text-text-muted">Session</span>
+            <SignedValue value={change} />
+            <ChangeBadge value={first ? (change / first) * 100 : 0} pill />
           </span>
         )}
       </header>
@@ -106,13 +154,22 @@ export function PnlChart() {
           </p>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="pnl-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={stroke} stopOpacity={0.26} />
+                  <stop offset="0%" stopColor={stroke} stopOpacity={0.3} />
+                  <stop offset="55%" stopColor={stroke} stopOpacity={0.1} />
                   <stop offset="100%" stopColor={stroke} stopOpacity={0} />
                 </linearGradient>
               </defs>
+              {/* Recessive by design: the rules are there to read a value
+                  off, not to be looked at. */}
+              <CartesianGrid
+                vertical={false}
+                stroke={colors.border}
+                strokeOpacity={0.7}
+                strokeDasharray="2 4"
+              />
               <XAxis
                 dataKey="time"
                 tick={{ fill: colors.textMuted, fontSize: 10 }}
@@ -121,23 +178,24 @@ export function PnlChart() {
                 minTickGap={40}
               />
               <YAxis
-                domain={["auto", "auto"]}
+                domain={valueDomain(values, first)}
                 tick={{ fill: colors.textMuted, fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
                 width={axisWidth(values, range)}
                 tickFormatter={axisFormatter(range)}
               />
+              {/* Where the session opened. Without it the area is a shape;
+                  with it, every point above the rule is a gain. */}
+              <ReferenceLine
+                y={first}
+                stroke={colors.textFaint}
+                strokeDasharray="4 4"
+                strokeWidth={1}
+              />
               <Tooltip
-                contentStyle={{
-                  background: colors.surface,
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: parseInt(radii.control, 10),
-                  boxShadow: shadows.pop,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: colors.textMuted }}
-                formatter={(value: number) => [formatPrice(value), "Value"]}
+                cursor={{ stroke: colors.borderStrong, strokeWidth: 1 }}
+                content={<ValueTooltip baseline={first} />}
               />
               <Area
                 type="monotone"
@@ -145,6 +203,8 @@ export function PnlChart() {
                 stroke={stroke}
                 strokeWidth={2}
                 fill="url(#pnl-fill)"
+                dot={false}
+                activeDot={{ r: 4, fill: stroke, stroke: colors.surface, strokeWidth: 2 }}
                 isAnimationActive={false}
               />
             </AreaChart>

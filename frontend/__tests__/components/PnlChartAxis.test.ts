@@ -1,5 +1,5 @@
-import { expect, it } from "vitest";
-import { axisWidth } from "@/components/portfolio/PnlChart";
+import { describe, expect, it } from "vitest";
+import { axisWidth, valueDomain } from "@/components/portfolio/PnlChart";
 
 /**
  * The band Recharts reserves for the Y axis. Tested directly rather than
@@ -48,4 +48,28 @@ it("keeps a floor so a one-digit series still has a readable gutter", () => {
 
 it("survives an empty series", () => {
   expect(axisWidth([], 0)).toBeGreaterThanOrEqual(44);
+});
+
+describe("valueDomain", () => {
+  it("pads both ends so the extremes do not touch the plot edges", () => {
+    const [low, high] = valueDomain([10_000, 10_100], 10_000);
+    expect(low).toBeLessThan(10_000);
+    expect(high).toBeGreaterThan(10_100);
+  });
+
+  it("keeps the baseline inside the plot when the whole series is above it", () => {
+    const [low, high] = valueDomain([10_050, 10_100], 10_000);
+    expect(low).toBeLessThan(10_000);
+    expect(high).toBeGreaterThan(10_100);
+  });
+
+  it("gives a flat series somewhere to sit rather than a zero-height domain", () => {
+    const [low, high] = valueDomain([10_000, 10_000], 10_000);
+    expect(high).toBeGreaterThan(low);
+  });
+
+  it("survives an empty series", () => {
+    const [low, high] = valueDomain([], 0);
+    expect(high).toBeGreaterThan(low);
+  });
 });
