@@ -78,6 +78,12 @@ class Settings:
     market_capacity: int = 100
     initial_cash: float = 10_000.0
 
+    #: Whether a freshly minted guest is seeded with the demo portfolio of
+    #: `app.db.seed.DEMO_HOLDINGS` rather than cash alone. False restores the
+    #: pre-demo behaviour exactly, which is what the E2E fresh-start
+    #: assertions are written against.
+    demo_portfolio: bool = True
+
     #: Signs the session cookie that identifies a user. See `from_env` for
     #: what happens when it is unset.
     session_secret: str = ""
@@ -236,4 +242,5 @@ class Settings:
             github_client_secret=os.getenv("GITHUB_CLIENT_SECRET", ""),
             public_base_url=os.getenv("PUBLIC_BASE_URL", ""),
             auth_mock=os.getenv("AUTH_MOCK", "").lower() == "true",
+            demo_portfolio=_env_bool("DEMO_PORTFOLIO", True),
         )

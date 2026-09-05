@@ -49,3 +49,16 @@ async def get_history(
     """Portfolio value snapshots over time, oldest first."""
     snapshots = await service.get_history(limit=limit)
     return {"snapshots": [s.to_dict() for s in snapshots]}
+
+
+#: Upper bound on trade rows returned in one call.
+MAX_TRADES_LIMIT = 500
+
+
+@router.get("/trades")
+async def get_trades(
+    service: TradeServiceDep,
+    limit: Annotated[int, Query(ge=1, le=MAX_TRADES_LIMIT)] = 200,
+) -> dict:
+    """Executed trades, newest first, with realized P&L on each sale."""
+    return {"trades": await service.get_trades(limit=limit)}

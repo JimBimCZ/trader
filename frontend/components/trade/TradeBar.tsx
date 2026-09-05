@@ -38,7 +38,7 @@ export function TradeBar() {
   }
 
   return (
-    <section className="rise card px-4 py-3" aria-label="Trade">
+    <section id="trade-ticket" className="rise card px-4 py-3" aria-label="Trade">
       {/* Sized to stay on one line at the workspace's own column width
           (~530px at a 1440px viewport). Wrapping costs ~56px of vertical
           space, which comes straight out of the chart rows below. */}

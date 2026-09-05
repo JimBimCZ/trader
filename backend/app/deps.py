@@ -19,7 +19,7 @@ from .errors import PENDING_SESSION_COOKIE_ATTR
 from .identity import COOKIE_MAX_AGE, COOKIE_NAME, SessionCookie, User, UserStore
 from .llm import ActionExecutor, ChatRepository, ChatService
 from .portfolio.service import build_trade_service
-from .system.service import ResetService
+from .system.service import ResetService, build_reset_service
 from .watchlist.repository import WatchlistRepository
 from .watchlist.service import WatchlistService
 
@@ -209,15 +209,7 @@ ChatServiceDep = Annotated["ChatService", Depends(get_chat_service)]
 
 def get_reset_service(request: Request, user: CurrentUserDep) -> ResetService:
     """Build a ResetService that can only wipe the caller's own rows."""
-    state = request.app.state
-    return ResetService(
-        state.db,
-        state.settings,
-        user.id,
-        state.reconciler,
-        state.trade_lock,
-        state.watchlist_lock,
-    )
+    return build_reset_service(request, user.id)
 
 
 ResetServiceDep = Annotated["ResetService", Depends(get_reset_service)]

@@ -31,7 +31,7 @@ def observed_profile_during_reset(settings, monkeypatch):
     seen: list[int] = []
     real_seed = reset_module.seed_user
 
-    async def observing_seed(db, config, user_id):
+    async def observing_seed(db, config, user_id, *, demo=False):
         observer = await asyncpg.connect(
             normalize_dsn(settings.database_url),
             server_settings={"search_path": settings.db_schema},
@@ -43,7 +43,7 @@ def observed_profile_during_reset(settings, monkeypatch):
             seen.append(row["n"])
         finally:
             await observer.close()
-        return await real_seed(db, config, user_id)
+        return await real_seed(db, config, user_id, demo=demo)
 
     monkeypatch.setattr(reset_module, "seed_user", observing_seed)
     return seen

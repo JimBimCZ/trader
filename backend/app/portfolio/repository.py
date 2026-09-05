@@ -92,19 +92,40 @@ class TradeRepository:
         self._db = db
         self._user_id = user_id
 
-    async def insert(self, ticker: str, side: Side, quantity: float, price: float) -> Trade:
+    async def insert(
+        self,
+        ticker: str,
+        side: Side,
+        quantity: float,
+        price: float,
+        *,
+        is_demo: bool = False,
+        executed_at: str | None = None,
+    ) -> Trade:
+        """Append one fill.
+
+        `is_demo` marks a row the seeder wrote rather than the user. It is
+        deliberately absent from `Trade`: nothing above this repository needs
+        to tell them apart, and the History view shows both, because a demo
+        trade honestly describes how a demo position came to be.
+
+        `executed_at` overrides the timestamp, defaulting to `utcnow_iso()`.
+        It exists solely for the demo seed, which backdates its rows so the
+        History view opens on a spread rather than four fills bunched at
+        "just now" -- a live trade must never pass it.
+        """
         trade = Trade(
             id=str(uuid.uuid4()),
             ticker=ticker,
             side=side,
             quantity=quantity,
             price=price,
-            executed_at=utcnow_iso(),
+            executed_at=executed_at or utcnow_iso(),
         )
         await self._db.execute(
             """
-            INSERT INTO trades (id, user_id, ticker, side, quantity, price, executed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO trades (id, user_id, ticker, side, quantity, price, executed_at, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade.id,
@@ -114,6 +135,7 @@ class TradeRepository:
                 trade.quantity,
                 trade.price,
                 trade.executed_at,
+                is_demo,
             ),
         )
         return trade
@@ -127,6 +149,34 @@ class TradeRepository:
             LIMIT ?
             """,
             (self._user_id, limit),
+        )
+        return [
+            Trade(
+                id=row["id"],
+                ticker=row["ticker"],
+                side=row["side"],
+                quantity=float(row["quantity"]),
+                price=float(row["price"]),
+                executed_at=row["executed_at"],
+            )
+            for row in rows
+        ]
+
+    async def list_all(self) -> list[Trade]:
+        """The whole log, oldest first, for a realized-P&L replay.
+
+        Unbounded on purpose: `replay_realized` needs every row before a sell
+        to know what basis it closed against, so a LIMIT here would produce
+        wrong numbers rather than fewer of them. Bounded in practice by the
+        guest expiry the cleanup cron applies.
+        """
+        rows = await self._db.fetch_all(
+            """
+            SELECT id, ticker, side, quantity, price, executed_at
+            FROM trades WHERE user_id = ?
+            ORDER BY executed_at ASC, seq ASC
+            """,
+            (self._user_id,),
         )
         return [
             Trade(

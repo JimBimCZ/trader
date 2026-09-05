@@ -36,6 +36,10 @@ export const BOOT_MAX_MS = 2_500;
  * deliberately not in the set — they stream in afterwards and flashing is
  * what they are supposed to do.
  *
+ * The session goes first and alone; the other three follow together once it
+ * has answered. See the comment in the effect for why that ordering is load-
+ * bearing rather than stylistic.
+ *
  * `allSettled`, not `all`: a call that fails must still reveal the app. Every
  * panel already renders its own empty or error state, and any of them beats
  * trapping the user behind a spinner that will never lift.
@@ -58,8 +62,31 @@ export function useAppBoot(): boolean {
     // Whichever comes first. The losing promise is not cancelled: a slow call
     // still resolves into its own store, and the panel showing a skeleton for
     // it swaps in the real content whenever that happens.
+    //
+    // Sequential on purpose, and the ordering is the whole point.
+    //
+    // A first-time visitor arrives with no session cookie, and EVERY
+    // user-resolving route mints a guest when it finds none: twelve inserts
+    // and a full reconcile, on a serverless instance that pays its own cold
+    // start. Fired together, these four requests minted four guests, kept
+    // three of them orphaned, and took 4-10s each where a single cookied
+    // request takes 700ms -- long enough on a cold instance that the client's
+    // own 20s deadline aborted them. An aborted watchlist is a chart with no
+    // ticker to draw; an aborted history is a Performance panel showing its
+    // load-failure state. That is what "the charts sometimes don't load" was.
+    //
+    // Resolving the session first mints exactly one guest and hands the other
+    // three the cookie, so they are cheap reads rather than three more mints.
+    const bootCalls = async () => {
+      // Swallowed rather than awaited bare: a session that fails must not
+      // skip the other three. `loadSession` records its own failure on the
+      // store, which is what the account control renders.
+      await loadSession().catch(() => {});
+      await Promise.allSettled([refreshPortfolio(), refreshWatchlist(), refreshChat()]);
+    };
+
     void Promise.race([
-      Promise.allSettled([loadSession(), refreshPortfolio(), refreshWatchlist(), refreshChat()]),
+      bootCalls(),
       new Promise((resolve) => {
         cap = setTimeout(resolve, BOOT_MAX_MS);
       }),

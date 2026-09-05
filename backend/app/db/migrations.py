@@ -89,6 +89,12 @@ MIGRATIONS: list[str] = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities (user_id)",
+    # 004 -- demo trades are excluded from has_activity(), which gates both
+    # the sign-in conflict dialog and whether a demo portfolio may be
+    # cleared. Without the flag every seeded guest counts as active: the
+    # dialog fires on every sign-in, and the demo it exists to clear never
+    # clears. schema.py carries the column too, for a database created fresh.
+    "ALTER TABLE trades ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
 ]
 
 

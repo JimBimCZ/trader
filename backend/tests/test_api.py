@@ -162,6 +162,13 @@ def test_every_get_route_answers(api_client, path):
     assert api_client.get(path).status_code == 200
 
 
+EXPORTED_ROUTES = [
+    "privacy",
+    "portfolio",
+    "history",
+]
+
+
 class TestExportedSubroutes:
     """The static export emits a directory per route, not a bare file.
 
@@ -173,22 +180,27 @@ class TestExportedSubroutes:
 
     @pytest.fixture
     def static_export(self, tmp_path, monkeypatch):
-        """A minimal export: an app shell and one exported subroute."""
+        """A minimal export: an app shell and every exported subroute."""
         (tmp_path / "index.html").write_text("<html>app shell</html>")
-        (tmp_path / "privacy").mkdir()
-        (tmp_path / "privacy" / "index.html").write_text("<html>privacy policy</html>")
+        for route in ("privacy", "portfolio", "history"):
+            (tmp_path / route).mkdir()
+            (tmp_path / route / "index.html").write_text(f"<html>{route} page</html>")
         monkeypatch.setattr("app.main.STATIC_DIR", tmp_path)
         return tmp_path
 
-    def test_serves_a_directory_route_from_its_index(self, api_client, static_export):
-        """`/privacy/` must be the privacy page, not the app shell."""
-        response = api_client.get("/privacy/")
+    @pytest.mark.parametrize("route", EXPORTED_ROUTES)
+    def test_serves_a_directory_route_from_its_index(self, api_client, static_export, route):
+        """`/<route>/` must be that page, not the app shell."""
+        response = api_client.get(f"/{route}/")
         assert response.status_code == 200
-        assert "privacy policy" in response.text
+        assert f"{route} page" in response.text
 
-    def test_serves_the_same_route_without_its_trailing_slash(self, api_client, static_export):
+    @pytest.mark.parametrize("route", EXPORTED_ROUTES)
+    def test_serves_the_same_route_without_its_trailing_slash(
+        self, api_client, static_export, route
+    ):
         """A hand-typed URL drops the slash; the link in the footer does not."""
-        assert "privacy policy" in api_client.get("/privacy").text
+        assert f"{route} page" in api_client.get(f"/{route}").text
 
     def test_an_unknown_route_still_falls_back_to_the_shell(self, api_client, static_export):
         """Client-side routes have no directory, and must reach the SPA."""

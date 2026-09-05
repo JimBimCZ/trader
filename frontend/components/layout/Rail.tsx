@@ -1,34 +1,26 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useWatchlistStore } from "@/store/useWatchlistStore";
 import { usePortfolioStore } from "@/store/usePortfolioStore";
-import { PANELS, type PanelKey } from "./panels";
-
-const ICONS: Record<PanelKey, string> = {
-  watchlist: "M4 6h16M4 12h10M4 18h6",
-  chart: "M4 18l5-6 4 3 6.5-8",
-  portfolio: "M4 20V9m5 11V4m5 16v-7m5 7V11",
-  assistant: "M20 12a8 8 0 1 1-3.2-6.4M20 5v4h-4",
-};
-
-function scrollTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
+import { NAV } from "./panels";
 
 export function Rail() {
+  const pathname = usePathname();
   const tickers = useWatchlistStore((s) => s.tickers);
-  const selected = useWatchlistStore((s) => s.selectedTicker);
   const positions = usePortfolioStore((s) => s.positions);
+  const trades = usePortfolioStore((s) => s.trades);
   const watchlistReady = useWatchlistStore((s) => s.status) === "ready";
   const portfolioReady = usePortfolioStore((s) => s.status) === "ready";
+  const tradesReady = usePortfolioStore((s) => s.tradesStatus) === "ready";
 
   // A count of 0 is a claim, and before the fetch answers it is a wrong one.
   // An em dash says "not known yet" and keeps the badge's width stable.
-  const badges: Record<PanelKey, string | undefined> = {
-    watchlist: watchlistReady ? String(tickers.length) : "\u2014",
-    chart: selected ?? undefined,
-    portfolio: portfolioReady ? String(positions.length) : "\u2014",
-    assistant: undefined,
+  const badges: Record<(typeof NAV)[number]["href"], string | undefined> = {
+    "/": watchlistReady ? String(tickers.length) : "—",
+    "/portfolio/": portfolioReady ? String(positions.length) : "—",
+    "/history/": tradesReady ? String(trades.length) : "—",
   };
 
   return (
@@ -52,18 +44,22 @@ export function Rail() {
         <span className="text-[15px] font-semibold tracking-[-0.02em] text-text">Trader</span>
       </span>
 
-      {(Object.keys(PANELS) as PanelKey[]).map((key) => (
-        <button
-          key={key}
-          onClick={() => scrollTo(PANELS[key].id)}
+      {NAV.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          id={item.href === "/portfolio/" ? "rail-portfolio" : undefined}
           // The label is hidden below `lg`, which takes it out of the
           // accessibility tree along with the layout.
-          aria-label={PANELS[key].label}
-          className="group flex flex-1 items-center gap-2 rounded-control px-2 py-1.5 text-left transition hover:bg-surface-sunk lg:flex-none"
+          aria-label={item.label}
+          aria-current={pathname === item.href ? "page" : undefined}
+          className={`group flex flex-1 items-center gap-2 rounded-control px-2 py-1.5 text-left transition lg:flex-none ${
+            pathname === item.href ? "bg-blue-wash" : "hover:bg-surface-sunk"
+          }`}
         >
           <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
             <path
-              d={ICONS[key]}
+              d={item.icon}
               fill="none"
               stroke="currentColor"
               strokeWidth="1.9"
@@ -73,14 +69,14 @@ export function Rail() {
             />
           </svg>
           <span className="hidden text-[13px] font-medium tracking-[-0.01em] text-text lg:block">
-            {PANELS[key].label}
+            {item.label}
           </span>
-          {badges[key] && (
+          {badges[item.href] && (
             <span className="ml-auto hidden rounded-full bg-surface-sunk px-1.5 py-0.5 text-[10px] font-semibold text-text-muted lg:block">
-              {badges[key]}
+              {badges[item.href]}
             </span>
           )}
-        </button>
+        </Link>
       ))}
     </nav>
   );

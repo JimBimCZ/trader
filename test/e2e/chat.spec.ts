@@ -1,4 +1,4 @@
-import { test, expect, waitForPrice } from "./fixtures";
+import { test, expect, goToPortfolio, waitForPrice } from "./fixtures";
 
 // The backend runs with LLM_MOCK=true, so every response here follows the
 // table in API_CONTRACT §9.
@@ -18,6 +18,7 @@ test.describe("AI assistant", () => {
     await app.getByTestId("chat-send").click();
 
     await expect(app.getByTestId("chat-actions").last()).toContainText("Bought 10 AAPL");
+    await goToPortfolio(app);
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
   });
 

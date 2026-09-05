@@ -378,6 +378,38 @@ within the last hour — every 30 seconds by a background task (the container ta
 `GET /api/portfolio` past the interval (the serverless target, which has no background task; see
 `planning/VERCEL_DEPLOYMENT.md`). Rows older than 7 days are pruned, per user.
 
+### `GET /api/portfolio/trades?limit=200`
+
+*Added 2026-09-05, for the `/history/` route.*
+
+`limit` defaults to 200, capped at 500. Newest first — the order the table renders in.
+
+```json
+{
+  "trades": [
+    {
+      "id": "3f2a...",
+      "ticker": "AAPL",
+      "side": "buy",
+      "quantity": 10.0,
+      "price": 191.24,
+      "executed_at": "2026-08-18T09:14:03Z",
+      "value": 1912.40,
+      "realized_pnl": null
+    }
+  ]
+}
+```
+
+`value` is `round_cash(quantity * price)`. `realized_pnl` is `null` on every buy — not `0` — since
+a buy realizes nothing and `0` would read as "broke even"; it is populated on sells.
+
+Realized P&L is computed by replaying the **entire** trade log oldest-to-newest, never stored
+(D-57) — a sell's basis depends on every buy before it, so replaying only the page returned would
+misreport the oldest sells shown, which are exactly the ones a user scrolls back to check. The
+route fetches the full log for the replay and slices to `limit` afterward; `limit` changes how
+many rows come back, never what they say.
+
 ---
 
 ## 4. Watchlist

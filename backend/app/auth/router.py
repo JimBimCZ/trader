@@ -29,6 +29,7 @@ from ..errors import (
     ClaimTokenInvalidError,
 )
 from ..identity import COOKIE_NAME, User
+from ..system.service import build_reset_service
 from .providers import PROVIDER_LABELS, OAuthProfile
 from .resolution import Outcome, decide
 
@@ -196,6 +197,31 @@ async def login(request: Request, provider: str):
     return await client.authorize_redirect(request, _callback_url(request, provider))
 
 
+async def _clear_demo_if_untouched(request: Request, user_id: str, was_guest: bool) -> None:
+    """Drop a seeded demo portfolio as an account becomes real.
+
+    Two conditions, and the first one is why this is not simply
+    `if not has_activity`. PROMOTE also fires when an ALREADY SIGNED-IN user
+    connects a second provider, and `decide()` reports
+    `session_has_activity=False` for them -- it only computes that value for
+    guests. Keyed on activity alone, connecting GitHub to an existing Google
+    account would silently delete that user's portfolio.
+
+    Never fatal. The identity is already linked by the time this runs, so a
+    raise here would fail a sign-in that has actually succeeded. A demo left
+    behind is cosmetic; a sign-in that 500s is not.
+    """
+    if not was_guest:
+        return
+    store = request.app.state.user_store
+    try:
+        if await store.has_activity(user_id):
+            return
+        await build_reset_service(request, user_id).reset_to_clean()
+    except Exception:
+        logger.exception("Could not clear the demo for %s; the sign-in stands", user_id)
+
+
 @router.get("/callback/{provider}", name="oauth_callback")
 async def oauth_callback(request: Request, provider: str):
     """Complete the exchange and act on the §5.1 decision."""
@@ -228,8 +254,12 @@ async def oauth_callback(request: Request, provider: str):
         target_id = decision.target_user_id
 
     if decision.outcome in (Outcome.PROMOTE, Outcome.CREATE):
+        was_guest = decision.outcome is Outcome.CREATE or (
+            session is not None and session.kind == "guest"
+        )
         await store.promote(target_id, profile.email, profile.name, profile.avatar)
         await store.attach_identity(target_id, profile.provider, profile.subject, profile.email)
+        await _clear_demo_if_untouched(request, target_id, was_guest)
 
     response = RedirectResponse("/", status_code=307)
     set_session_cookie(request, response, request.app.state.session_cookie, target_id)

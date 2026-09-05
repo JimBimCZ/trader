@@ -62,15 +62,15 @@ class UserStore:
                 "VALUES (?, ?, ?, 'guest', ?)",
                 (user_id, self._settings.initial_cash, now, now),
             )
-            await seed_user(self._db, self._settings, user_id)
+            await seed_user(self._db, self._settings, user_id, demo=self._settings.demo_portfolio)
         logger.info("Minted guest %s", user_id)
-        return User(
-            id=user_id,
-            cash_balance=self._settings.initial_cash,
-            kind="guest",
-            created_at=now,
-            last_seen_at=now,
-        )
+        # Re-read rather than construct: the demo seed moves cash_balance, and
+        # returning the pre-seed figure would put a stale number in front of
+        # the caller that resolves this user.
+        minted = await self.get(user_id)
+        if minted is None:  # pragma: no cover -- just committed
+            raise LookupError(f"Minted a guest that does not exist: {user_id}")
+        return minted
 
     async def touch(self, user: User) -> None:
         """Refresh last_seen_at, at most once per throttle window.
@@ -174,11 +174,16 @@ class UserStore:
         and checks membership with `<> ALL(...)`, rather than a `NOT IN`
         built from generated placeholders -- confirmed working against
         asyncpg through this wrapper's `?`-rewriting.
+
+        Demo trades do not count. A seeded guest has four of them, and if
+        they registered here every guest would look active: the conflict
+        dialog would fire on every sign-in, and the demo would never meet the
+        "no activity of their own" condition that lets it be cleared.
         """
         row = await self._db.fetch_one(
             """
             SELECT
-                (SELECT COUNT(*) FROM trades WHERE user_id = ?)        AS trades,
+                (SELECT COUNT(*) FROM trades WHERE user_id = ? AND NOT is_demo) AS trades,
                 (SELECT COUNT(*) FROM chat_messages WHERE user_id = ?) AS messages,
                 (SELECT COUNT(*) FROM watchlist WHERE user_id = ?)     AS watched,
                 (SELECT COUNT(*) FROM watchlist WHERE user_id = ? AND ticker <> ALL(?))

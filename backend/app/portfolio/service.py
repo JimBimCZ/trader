@@ -20,7 +20,9 @@ from ..market.tickers import validate_ticker
 from ..reconcile import TickerReconciler
 from .formulas import (
     buy_avg_cost,
+    market_value,
     realized_pnl,
+    replay_realized,
     round_cash,
     round_quantity,
     total_value,
@@ -94,6 +96,23 @@ class TradeService:
     async def get_history(self, limit: int = 500) -> list[PortfolioSnapshot]:
         """Portfolio value snapshots, oldest first."""
         return await self._snapshots.list(limit=limit)
+
+    async def get_trades(self, limit: int = 200) -> list[dict]:
+        """The trade log, newest first, each row carrying what it realized.
+
+        The replay runs over the whole log and the slice happens afterwards,
+        so `limit` changes how many rows come back and never what they say.
+        """
+        log = await self._trades.list_all()
+        realized = replay_realized(log)
+        return [
+            {
+                **trade.to_dict(),
+                "value": market_value(trade.quantity, trade.price),
+                "realized_pnl": realized[trade.id],
+            }
+            for trade in reversed(log)
+        ][:limit]
 
     async def current_total_value(self) -> float:
         cash = await self._users.get_cash()

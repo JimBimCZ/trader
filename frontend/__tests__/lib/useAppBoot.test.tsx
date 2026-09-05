@@ -154,3 +154,58 @@ it("does not wait for the cap when everything answers promptly", async () => {
   await waitFor(() => expect(result.current).toBe(true));
   expect(BOOT_MIN_MS).toBeLessThan(BOOT_MAX_MS);
 });
+
+it("resolves the session before fetching anything else", async () => {
+  const calls: string[] = [];
+  useSessionStore.setState({
+    load: () => {
+      calls.push("session");
+      return session.promise;
+    },
+  });
+  usePortfolioStore.setState({
+    refresh: () => {
+      calls.push("portfolio");
+      return portfolio.promise;
+    },
+  });
+  useWatchlistStore.setState({
+    refresh: () => {
+      calls.push("watchlist");
+      return watchlist.promise;
+    },
+  });
+  useChatStore.setState({
+    refresh: () => {
+      calls.push("chat");
+      return chat.promise;
+    },
+  });
+
+  renderHook(() => useAppBoot());
+
+  // Only the session has been asked for: the other three would each mint
+  // their own guest if they went out without the cookie it brings back.
+  await act(async () => {});
+  expect(calls).toEqual(["session"]);
+
+  await act(async () => {
+    session.resolve();
+  });
+  expect(calls.slice(1).sort()).toEqual(["chat", "portfolio", "watchlist"]);
+});
+
+it("still fetches the rest when the session call fails", async () => {
+  const { result } = renderHook(() => useAppBoot());
+
+  await act(async () => {
+    session.reject(new Error("cold start"));
+  });
+  await settleAll(() => {
+    portfolio.resolve();
+    watchlist.resolve();
+    chat.resolve();
+  });
+
+  expect(result.current).toBe(true);
+});

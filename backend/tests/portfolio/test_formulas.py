@@ -10,13 +10,14 @@ from app.portfolio.formulas import (
     market_value,
     position_pct_change,
     realized_pnl,
+    replay_realized,
     round_cash,
     round_quantity,
     total_value,
     unrealized_pnl,
     value_position,
 )
-from app.portfolio.models import Position
+from app.portfolio.models import Position, Trade
 
 
 class TestRounding:
@@ -113,3 +114,80 @@ class TestTotalValue:
         positions = [Position("AAPL", 10, 190.0), Position("MSFT", 2, 400.0)]
         with pytest.raises(ValuationUnavailableError):
             total_value(1000.0, positions, {"AAPL": 200.0})
+
+
+def _trade(id_, ticker, side, quantity, price):
+    return Trade(
+        id=id_,
+        ticker=ticker,
+        side=side,
+        quantity=quantity,
+        price=price,
+        executed_at="2026-09-05T10:00:00Z",
+    )
+
+
+def test_replay_realized_carries_the_basis_across_trades():
+    """Two buys at different prices, then a partial sell and a full one."""
+    realized = replay_realized(
+        [
+            _trade("t1", "AAPL", "buy", 10, 100.0),
+            _trade("t2", "AAPL", "buy", 10, 120.0),  # avg cost now 110
+            _trade("t3", "AAPL", "sell", 5, 130.0),  # (130-110)*5
+            _trade("t4", "AAPL", "sell", 15, 90.0),  # (90-110)*15
+        ]
+    )
+
+    assert realized["t1"] is None
+    assert realized["t2"] is None
+    assert realized["t3"] == 100.0
+    assert realized["t4"] == -300.0
+
+
+def test_replay_realized_resets_the_basis_after_a_full_liquidation():
+    """A re-buy starts a new basis; carrying the old one would misreport it."""
+    realized = replay_realized(
+        [
+            _trade("t1", "AAPL", "buy", 10, 100.0),
+            _trade("t2", "AAPL", "sell", 10, 120.0),
+            _trade("t3", "AAPL", "buy", 10, 200.0),
+            _trade("t4", "AAPL", "sell", 10, 210.0),
+        ]
+    )
+    assert realized["t2"] == 200.0
+    assert realized["t4"] == 100.0
+
+
+def test_replay_realized_keeps_tickers_apart():
+    realized = replay_realized(
+        [
+            _trade("t1", "AAPL", "buy", 10, 100.0),
+            _trade("t2", "MSFT", "buy", 10, 400.0),
+            _trade("t3", "AAPL", "sell", 10, 110.0),
+        ]
+    )
+    assert realized["t3"] == 100.0
+
+
+def test_replay_realized_tolerates_a_sell_with_no_basis():
+    """Unreachable through the service, which refuses short selling -- but a
+    read must not fail because a hand-edited row is odd."""
+    realized = replay_realized([_trade("t1", "AAPL", "sell", 5, 50.0)])
+    assert realized["t1"] == 250.0
+
+
+def test_replay_realized_does_not_carry_a_dead_basis_into_a_later_sell():
+    """The branch the reset exists for: nothing re-establishes a basis between
+    the liquidation and the next sell, so a stale avg_cost would leak straight
+    into the realized figure."""
+    realized = replay_realized(
+        [
+            _trade("t1", "AAPL", "buy", 10, 100.0),
+            _trade("t2", "AAPL", "sell", 10, 130.0),
+            _trade("t3", "AAPL", "sell", 5, 90.0),
+        ]
+    )
+    assert realized["t2"] == 300.0
+    # Basis was reset to 0 by t2, so t3 realizes the full proceeds rather than
+    # measuring against the 100.0 that is no longer held.
+    assert realized["t3"] == 450.0

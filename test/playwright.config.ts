@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { BASE_URL, tourDismissed } from "./e2e/fixtures";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -11,7 +12,8 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:8000",
+    baseURL: BASE_URL,
+    storageState: tourDismissed,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
