@@ -34,3 +34,15 @@ export async function dismissReceipt(page: Page) {
 export async function waitForPrice(page: Page, ticker: string) {
   await expect(page.getByTestId(`price-${ticker}`)).not.toHaveText("—", { timeout: 15_000 });
 }
+
+/**
+ * Navigates to /portfolio/ the way a person does now -- clicking the rail's
+ * link, not a scroll target -- and confirms the rail marks it as the current
+ * route. The heatmap, the performance chart and the positions table all live
+ * here now, not on the overview.
+ */
+export async function goToPortfolio(page: Page) {
+  const link = page.getByRole("link", { name: "Portfolio" });
+  await link.click();
+  await expect(link).toHaveAttribute("aria-current", "page");
+}

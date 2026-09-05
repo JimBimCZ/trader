@@ -1,4 +1,4 @@
-import { test, expect, dismissReceipt, waitForPrice } from "./fixtures";
+import { test, expect, dismissReceipt, goToPortfolio, waitForPrice } from "./fixtures";
 
 test.describe("Trading", () => {
   test("buying reduces cash and opens a position", async ({ app }) => {
@@ -9,6 +9,7 @@ test.describe("Trading", () => {
     await app.getByTestId("buy-button").click();
     await dismissReceipt(app);
 
+    await goToPortfolio(app);
     await expect(app.getByTestId("position-AAPL")).toBeVisible();
     await expect(app.getByTestId("position-AAPL")).toContainText("10");
 
@@ -27,12 +28,12 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-quantity").fill("5");
     await app.getByTestId("buy-button").click();
     await dismissReceipt(app);
-    await expect(app.getByTestId("position-AAPL")).toBeVisible();
 
     await app.getByTestId("trade-quantity").fill("5");
     await app.getByTestId("sell-button").click();
     await dismissReceipt(app);
 
+    await goToPortfolio(app);
     await expect(app.getByTestId("position-AAPL")).toHaveCount(0);
     await expect
       .poll(async () => {
@@ -71,6 +72,7 @@ test.describe("Trading", () => {
     await app.getByTestId("buy-button").click();
     await dismissReceipt(app);
 
+    await goToPortfolio(app);
     await expect(app.getByTestId("position-NVDA")).toBeVisible();
     // Every heatmap cell carries a signed percentage, not colour alone.
     await expect(app.getByTestId("heatmap")).toContainText("NVDA");
@@ -84,13 +86,13 @@ test.describe("Trading", () => {
     await app.getByTestId("trade-quantity").fill("2");
     await app.getByTestId("buy-button").click();
     await dismissReceipt(app);
-    await expect(app.getByTestId("position-TSLA")).toBeVisible();
 
     await app.getByTestId("watchlist-row-TSLA").hover();
     await app.getByTestId("remove-TSLA").click();
     await expect(app.getByTestId("watchlist-row-TSLA")).toHaveCount(0);
 
     // The position must remain, still priced, and be flagged as unwatched.
+    await goToPortfolio(app);
     await expect(app.getByTestId("position-TSLA")).toBeVisible();
     await expect(app.getByTestId("position-TSLA")).toContainText("unwatched");
     await expect(app.getByTestId("position-TSLA")).toContainText("$");
