@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.identity.store import UserStore
+from app.portfolio.repository import TradeRepository
 
 
 class TestMinting:
@@ -136,3 +139,22 @@ class TestActiveUsers:
 
         assert recent.id in active
         assert old.id not in active
+
+
+@pytest.mark.asyncio
+async def test_has_activity_ignores_demo_trades(db, settings):
+    """A seeded demo must not make every guest look like it has done something.
+
+    has_activity gates the sign-in conflict dialog. If the demo counted, the
+    dialog would fire on every single sign-in -- which trains people to
+    dismiss the one warning that matters -- and the demo could never be
+    cleared, because clearing is conditioned on this being false.
+    """
+    store = UserStore(db, settings)
+    user = await store.mint_guest()
+
+    await TradeRepository(db, user.id).insert("AAPL", "buy", 10, 186.40, is_demo=True)
+    assert await store.has_activity(user.id) is False
+
+    await TradeRepository(db, user.id).insert("AAPL", "buy", 1, 190.00)
+    assert await store.has_activity(user.id) is True

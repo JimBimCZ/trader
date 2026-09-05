@@ -92,7 +92,22 @@ class TradeRepository:
         self._db = db
         self._user_id = user_id
 
-    async def insert(self, ticker: str, side: Side, quantity: float, price: float) -> Trade:
+    async def insert(
+        self,
+        ticker: str,
+        side: Side,
+        quantity: float,
+        price: float,
+        *,
+        is_demo: bool = False,
+    ) -> Trade:
+        """Append one fill.
+
+        `is_demo` marks a row the seeder wrote rather than the user. It is
+        deliberately absent from `Trade`: nothing above this repository needs
+        to tell them apart, and the History view shows both, because a demo
+        trade honestly describes how a demo position came to be.
+        """
         trade = Trade(
             id=str(uuid.uuid4()),
             ticker=ticker,
@@ -103,8 +118,8 @@ class TradeRepository:
         )
         await self._db.execute(
             """
-            INSERT INTO trades (id, user_id, ticker, side, quantity, price, executed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO trades (id, user_id, ticker, side, quantity, price, executed_at, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade.id,
@@ -114,6 +129,7 @@ class TradeRepository:
                 trade.quantity,
                 trade.price,
                 trade.executed_at,
+                is_demo,
             ),
         )
         return trade

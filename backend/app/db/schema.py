@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS trades (
     side        TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
     quantity    DOUBLE PRECISION NOT NULL,
     price       DOUBLE PRECISION NOT NULL,
-    executed_at TEXT NOT NULL
+    executed_at TEXT NOT NULL,
+    is_demo     BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (

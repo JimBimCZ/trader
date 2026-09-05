@@ -174,11 +174,16 @@ class UserStore:
         and checks membership with `<> ALL(...)`, rather than a `NOT IN`
         built from generated placeholders -- confirmed working against
         asyncpg through this wrapper's `?`-rewriting.
+
+        Demo trades do not count. A seeded guest has four of them, and if
+        they registered here every guest would look active: the conflict
+        dialog would fire on every sign-in, and the demo would never meet the
+        "no activity of their own" condition that lets it be cleared.
         """
         row = await self._db.fetch_one(
             """
             SELECT
-                (SELECT COUNT(*) FROM trades WHERE user_id = ?)        AS trades,
+                (SELECT COUNT(*) FROM trades WHERE user_id = ? AND NOT is_demo) AS trades,
                 (SELECT COUNT(*) FROM chat_messages WHERE user_id = ?) AS messages,
                 (SELECT COUNT(*) FROM watchlist WHERE user_id = ?)     AS watched,
                 (SELECT COUNT(*) FROM watchlist WHERE user_id = ? AND ticker <> ALL(?))
