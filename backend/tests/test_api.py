@@ -164,15 +164,8 @@ def test_every_get_route_answers(api_client, path):
 
 EXPORTED_ROUTES = [
     "privacy",
-    # /portfolio/ and /history/ don't exist until the routes task -- these
-    # cases fail against the fixture below until it does, and the marker
-    # comes off there, not here.
-    pytest.param(
-        "portfolio", marks=pytest.mark.xfail(reason="added in the routes task", strict=True)
-    ),
-    pytest.param(
-        "history", marks=pytest.mark.xfail(reason="added in the routes task", strict=True)
-    ),
+    "portfolio",
+    "history",
 ]
 
 
@@ -187,12 +180,11 @@ class TestExportedSubroutes:
 
     @pytest.fixture
     def static_export(self, tmp_path, monkeypatch):
-        """A minimal export: an app shell and the one exported subroute that
-        exists today. `/portfolio/` and `/history/` are added here once the
-        routes task adds the real pages."""
+        """A minimal export: an app shell and every exported subroute."""
         (tmp_path / "index.html").write_text("<html>app shell</html>")
-        (tmp_path / "privacy").mkdir()
-        (tmp_path / "privacy" / "index.html").write_text("<html>privacy page</html>")
+        for route in ("privacy", "portfolio", "history"):
+            (tmp_path / route).mkdir()
+            (tmp_path / route / "index.html").write_text(f"<html>{route} page</html>")
         monkeypatch.setattr("app.main.STATIC_DIR", tmp_path)
         return tmp_path
 

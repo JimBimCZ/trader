@@ -10,7 +10,6 @@ import { InstrumentLabel } from "../ui/InstrumentLabel";
 import { SignedValue } from "../ui/SignedValue";
 import { SkeletonRow } from "../ui/Skeleton";
 import { LoadFailure } from "../ui/LoadFailure";
-import { PANELS } from "../layout/panels";
 
 export function PositionsTable() {
   const positions = usePortfolioStore((s) => s.positions);
@@ -22,7 +21,7 @@ export function PositionsTable() {
 
   return (
     <section
-      id={PANELS.portfolio.id}
+      id="panel-positions"
       className="rise card flex flex-col overflow-hidden lg:min-h-0"
       aria-label="Positions"
     >
