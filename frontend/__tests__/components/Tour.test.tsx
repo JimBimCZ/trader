@@ -24,6 +24,11 @@ it("greets a signed-out visitor", () => {
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
 
+it("moves focus to the dialog the moment it opens, not just on advance", () => {
+  render(<Tour />);
+  expect(screen.getByRole("dialog")).toHaveFocus();
+});
+
 it("stays away from a signed-in user, who has seen the app", () => {
   useSessionStore.setState({
     session: { id: "u1", kind: "user", email: "a@b.c", name: "A", avatar: null, hasActivity: true },

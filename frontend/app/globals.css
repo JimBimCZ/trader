@@ -190,6 +190,13 @@ textarea {
     background-size: 200% 100%;
     animation: skeleton-sheen 1.4s linear infinite;
   }
+
+  /* The onboarding tour's spotlight, sliding from one target to the next.
+     Reduced motion gets no rule at all, so the cutout jumps straight to the
+     new step's rect instead of gliding across the screen. */
+  .tour-spotlight {
+    transition: top 200ms, left 200ms, width 200ms, height 200ms;
+  }
 }
 
 /* Reduced motion, and the pre-animation ground under the rule above: a flat

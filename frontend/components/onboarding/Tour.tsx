@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/store/useSessionStore";
 import { TOUR_STEPS, type TourStep } from "./steps";
 
@@ -45,13 +45,20 @@ export function Tour() {
 
   const step = steps?.[index];
 
+  // Layout-timed: the spotlight rect has to be in place before the browser
+  // paints the new step, or the scrim disappears for one frame.
+  useLayoutEffect(() => {
+    if (!step) return;
+    const target = document.getElementById(step.target);
+    setRect(target ? target.getBoundingClientRect() : null);
+  }, [step]);
+
   useEffect(() => {
     if (!step) return;
     const measure = () => {
       const target = document.getElementById(step.target);
       setRect(target ? target.getBoundingClientRect() : null);
     };
-    measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [step]);
@@ -75,9 +82,13 @@ export function Tour() {
     return () => window.removeEventListener("keydown", onKey);
   }, [step, dismiss]);
 
+  // Keyed on `step`, not `index`: on the render where the card first mounts,
+  // index is still 0 -- the same value it held while nothing was rendered --
+  // so an effect keyed on index alone would never fire for the open itself.
   useEffect(() => {
+    if (!step) return;
     cardRef.current?.focus();
-  }, [index]);
+  }, [step]);
 
   if (!steps || steps.length === 0 || !step) return null;
 
@@ -88,7 +99,7 @@ export function Tour() {
       {rect && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute rounded-card transition-[top,left,width,height] duration-200 motion-reduce:transition-none"
+          className="tour-spotlight pointer-events-none absolute rounded-card"
           style={{
             top: rect.top - 4,
             left: rect.left - 4,
