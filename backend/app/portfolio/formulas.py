@@ -85,6 +85,10 @@ def replay_realized(trades: list[Trade]) -> dict[str, float | None]:
     are a projection of it, so the basis a sell closed against is always
     recoverable from the rows before it.
 
+    `trades` must already be in chronological order. The function does no
+    sorting of its own and trusts list order to be replay order; an unsorted
+    or reverse-sorted list produces a wrong basis silently.
+
     Callers must pass the WHOLE log, not a page of it. A sell's basis depends
     on every buy that came before, so replaying a `limit`-truncated list
     reports the wrong number on the oldest sells shown -- which are exactly

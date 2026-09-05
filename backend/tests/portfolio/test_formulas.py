@@ -174,3 +174,20 @@ def test_replay_realized_tolerates_a_sell_with_no_basis():
     read must not fail because a hand-edited row is odd."""
     realized = replay_realized([_trade("t1", "AAPL", "sell", 5, 50.0)])
     assert realized["t1"] == 250.0
+
+
+def test_replay_realized_does_not_carry_a_dead_basis_into_a_later_sell():
+    """The branch the reset exists for: nothing re-establishes a basis between
+    the liquidation and the next sell, so a stale avg_cost would leak straight
+    into the realized figure."""
+    realized = replay_realized(
+        [
+            _trade("t1", "AAPL", "buy", 10, 100.0),
+            _trade("t2", "AAPL", "sell", 10, 130.0),
+            _trade("t3", "AAPL", "sell", 5, 90.0),
+        ]
+    )
+    assert realized["t2"] == 300.0
+    # Basis was reset to 0 by t2, so t3 realizes the full proceeds rather than
+    # measuring against the 100.0 that is no longer held.
+    assert realized["t3"] == 450.0
