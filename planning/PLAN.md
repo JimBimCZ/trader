@@ -263,6 +263,13 @@ PUBLIC_BASE_URL=
 # unauthenticated route that signs a session for any user with no provider
 # involved. Never set this in production.
 AUTH_MOCK=false
+
+# Optional: whether a freshly minted guest opens on the four-holding demo
+# portfolio (§7) rather than cash alone. Default true. Set to "false" for the
+# pre-demo behaviour exactly — which is what the E2E suite's fresh-start
+# assertions ($10,000, no positions) are written against, so
+# test/docker-compose.test.yml pins it there.
+DEMO_PORTFOLIO=true
 ```
 
 ### Behavior
@@ -291,6 +298,14 @@ AUTH_MOCK=false
   used by the E2E suite to move a session to a known user without a real provider round trip. The
   route answers 404 when this is unset (the default), so a production deployment does not even
   reveal that it exists.
+
+*Revised 2026-09-05: added `DEMO_PORTFOLIO` (default true). See §7's "Demo seed data for a guest"
+and `docs/superpowers/specs/2026-09-05-demo-onboarding-and-navigation-design.md` §4.*
+
+- `DEMO_PORTFOLIO=false` restores the pre-demo behaviour exactly: a fresh guest opens with
+  `initial_cash` and no positions. The E2E suite's `test/docker-compose.test.yml` sets this, so its
+  existing fresh-start scenarios keep asserting what they were written to assert; a new scenario
+  runs the stack a second time with the default `true` to cover the demo itself.
 
 ---
 
@@ -418,6 +433,12 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 - `quantity` REAL (fractional shares supported)
 - `price` REAL
 - `executed_at` TEXT (ISO timestamp)
+- `is_demo` BOOLEAN (default: `FALSE`) — *added 2026-09-05, migration 004.* Marks a row the demo
+  seeder wrote rather than the user. `has_activity()` excludes these, so a freshly seeded demo
+  guest still reports no activity — without the exclusion every guest would look active, firing
+  the sign-in conflict dialog on every single sign-in and permanently blocking the demo from ever
+  clearing (see the note under "Demo seed data for a guest" below). The History view shows demo
+  trades like any other; the column is invisible above the repository.
 
 **portfolio_snapshots** — Portfolio value over time (for P&L chart). Recorded every 30 seconds by a background task, and immediately after each trade execution.
 - `id` TEXT PRIMARY KEY (UUID)
@@ -438,6 +459,43 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 - One user profile: `id="default"`, `cash_balance=10000.0`
 - Ten watchlist entries: AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, JPM, V, NFLX
 
+### Demo seed data for a guest
+
+*Added 2026-09-05. Replaces "Default Seed Data" above for every guest minted while
+`DEMO_PORTFOLIO` (§5) is true — the default. A signed-in user's reset, and a mint with
+`DEMO_PORTFOLIO=false`, still get the plain seed above: the ten-ticker watchlist, `initial_cash`
+untouched, and a single t=0 snapshot.*
+
+`seed_user(db, settings, user_id, demo=...)` additionally writes, inside the same transaction as
+the guest's profile row:
+
+- **Four positions**, deliberately two in profit and two at a loss against their seed prices, so
+  the heatmap has both colours to draw on first paint: AAPL 10 @ 186.40, MSFT 4 @ 428.00, NVDA 2 @
+  781.50, TSLA 3 @ 254.00. Cost basis 5,901.00; cash after seeding is `initial_cash - 5,901.00` =
+  **4,099.00**. Every ticker is already in the default watchlist, so the tracked-ticker union is
+  unchanged.
+- **Four backing trades**, one per holding, each carrying `is_demo = TRUE` and staggered
+  17280/12960/8640/4320 seconds before the mint — oldest (AAPL) first — so the History view (§8)
+  opens on a plausible session instead of four fills bunched at "just now". `trades` stays
+  authoritative and positions a projection of it (D-21): a position with no trade behind it is
+  the one shape that invariant forbids.
+- **Forty backfilled `portfolio_snapshots`** spread over the preceding six hours, each valued by
+  evaluating `app.market.deterministic.price_at(ticker, t)` for every holding at that timestamp
+  plus cash. That function is a pure function of the clock, so on the serverless deployment —
+  where it is also the live price source — the backfilled curve joins the live one seamlessly. On
+  the container target the live source is the GBM simulator, whose path will not match past the
+  join point; both start from the same seed prices, so the curve lands in the right place and the
+  seam isn't visible at chart scale.
+- The existing idempotency guards cover this too: seeding is skipped outright if the user already
+  has a position row, so a repeated call cannot double the holdings or the value curve.
+
+Sign-in clears the demo — but only for a **guest with no activity of their own**
+(`has_activity()` false, computed with demo trades excluded per the `is_demo` note above). A
+guest who has actually traded keeps everything when they sign in; an already-signed-in user
+linking a second provider is never subject to this at all, guarded by checking session kind before
+`has_activity`, not just the activity flag. See
+`docs/superpowers/specs/2026-09-05-demo-onboarding-and-navigation-design.md` §5.
+
 ---
 
 ## 8. API Endpoints
@@ -453,6 +511,7 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 | GET | `/api/portfolio` | Current positions, cash balance, total value, unrealized P&L |
 | POST | `/api/portfolio/trade` | Execute a trade: `{ticker, quantity, side}` |
 | GET | `/api/portfolio/history` | Portfolio value snapshots over time (for P&L chart) |
+| GET | `/api/portfolio/trades` | *Added 2026-09-05.* Executed trades, newest first, each carrying `value` and `realized_pnl` (`null` on buys). See `planning/API_CONTRACT.md` §3. |
 
 ### Watchlist
 | Method | Path | Description |
@@ -567,40 +626,56 @@ workspace below is otherwise unchanged. See the **Footer** bullet in this sectio
 `planning/FRONTEND_SUMMARY.md`, and the note in §11 on what serving a second route costs the
 container target.*
 
-The frontend is a single-page application shaped like a macOS app: a translucent sidebar, a
-unified toolbar, and a three-column workspace where each panel owns its own scroll region. The
-page itself does not scroll on a wide screen.
+*Revised 2026-09-05: the workspace is three real routes now, not one page with a scrolling
+sidebar. `/` keeps the three-column shape but drops to just the main chart and the trade ticket in
+its middle column; the heatmap, the performance chart and the positions table moved to
+`/portfolio/`, full width, because on `/` they were competing with the main chart for one column
+and resolving to a few hundred pixels each. `/history/` is the trade log. All three share one
+layout (`app/(workspace)/layout.tsx`) holding the rail, header, footer, boot screen, both dialogs,
+and the price stream and boot hooks — so navigating between them keeps one `EventSource` open and
+the chart bundles warm, rather than reconnecting on every tab switch. `/privacy/` stays outside
+this group. See
+`docs/superpowers/specs/2026-09-05-demo-onboarding-and-navigation-design.md` §6, and §11 below for
+what serving two more directory routes costs the container target.*
+
+The frontend is three routes shaped like a macOS app: a translucent sidebar (now real navigation,
+not a scroll target), a unified toolbar, and — on each route — a workspace where every panel owns
+its own scroll region. The page itself does not scroll on a wide screen.
 
 ```
 ┌────────┬──────────────────────────────────────────────────┐
 │ ▤ Trader │ PORTFOLIO VALUE  ALLOCATION      ● Live  ☀ ☾ ▭ │
 │          │ $10,091.25 ▲ +$91.25  [██|██|░░]   cash        │
-│ Watchlist├───────────┬──────────────────────┬─────────────┤
-│ Markets  │ Watchlist │  Main chart          │  Assistant  │
-│ Portfolio│  ⬤ AAPL   │                      │             │
-│ Assistant│  ⬤ NVDA   ├──────────────────────┤   ╭───────╮ │
+│ Overview ├───────────┬──────────────────────┬─────────────┤
+│ Portfolio│ Watchlist │  Main chart          │  Assistant  │
+│ History  │  ⬤ AAPL   │                      │             │
+│          │  ⬤ NVDA   ├──────────────────────┤   ╭───────╮ │
 │          │  ⬤ MSFT   │  Trade ticket [S|B]  │   │bubble │ │
-│          │           ├───────────┬──────────┤   ╰───────╯ │
-│          │           │ Allocation│ Perform. │             │
-│          │           ├───────────┴──────────┤             │
-│          │           │  Positions           │             │
 │          ├───────────┴──────────────────────┴─────────────┤
 │          │ Simulated trading — not advice         Privacy │
 └────────┴────────────────────────────────────────────────┘
+
+/portfolio/ — heatmap and performance chart side by side, full width;
+              positions table full width beneath them. No watchlist,
+              no assistant column: the toolbar still carries the live total.
+
+/history/   — the trades table, full width, realized P&L on every sale.
 ```
 
-Below the `lg` breakpoint this inverts: the sidebar collapses to a horizontal icon bar, panels
-take their natural height, and the page scrolls as a whole, because a fixed viewport split four
-ways leaves every panel too short to read.
+Below the `lg` breakpoint this inverts on every route: the sidebar collapses to a horizontal icon
+bar, panels take their natural height, and the page scrolls as a whole, because a fixed viewport
+split leaves every panel too short to read.
 
 The specific component architecture is up to the Frontend Engineer, but the UI should
 include these elements:
 
-- **Sidebar** — a macOS source list: translucent material, one row per workspace panel, each
-  carrying that panel's live count (watchlist size, selected ticker, open positions) and
-  scrolling it into view on the narrow layouts. Its labels are hidden below `lg`, which removes
-  them from the accessibility tree too, so each row names itself on the button rather than
-  relying on the text beside it.
+- **Rail** *(renamed 2026-09-05, was "Sidebar")* — a macOS source list, now `next/link` navigation
+  rather than scroll-to-anchor: one row per route (Overview, Portfolio, History), the active one
+  marked with the systemBlue selection tint and `aria-current="page"`. Each row carries a live
+  count — Overview the watchlist size, Portfolio the position count, History the trade count — as
+  an em dash until its fetch answers. Its labels are hidden below `lg`, which removes them from
+  the accessibility tree too, so each row names itself on the link rather than relying on the text
+  beside it.
 - **Unified toolbar** — chrome rather than a card, wearing the same material as the sidebar.
   Carries the portfolio total value as the largest number on the page (updating live), unrealized
   P&L in currency and percent, cash balance, connection status, the **appearance control**, and a
@@ -616,14 +691,23 @@ include these elements:
   by the instrument's chip, name, live price and change pill. The line takes the instrument's
   identity colour, so selecting a ticker recolours the chart to match the row that was clicked —
   and green stays reserved for "up".
-- **Allocation & P&L heatmap** — treemap where each rectangle is a position, sized by portfolio
-  weight, shaded by return (green = profit, red = loss). A cell prints its ticker and weight,
-  adding the signed return once it is tall enough — on a freshly opened portfolio every return is
-  ~0% and the weight is the number actually worth reading.
-- **Performance chart** — area chart of total portfolio value over time, from
-  `portfolio_snapshots`, headed by the session change.
-- **Positions table** — ticker (with chip and company name), quantity, avg cost, current price,
+- **Allocation & P&L heatmap** *(moved to `/portfolio/` 2026-09-05, was on the overview)* —
+  treemap where each rectangle is a position, sized by portfolio weight, shaded by return
+  (green = profit, red = loss). A cell prints its ticker and weight, adding the signed return once
+  it is tall enough — on a freshly opened portfolio every return is ~0% and the weight is the
+  number actually worth reading.
+- **Performance chart** *(moved to `/portfolio/` 2026-09-05)* — area chart of total portfolio
+  value over time, from `portfolio_snapshots`, headed by the session change. Both this and the
+  heatmap get half the route's width each, sharing a row above the positions table, instead of
+  resolving to a few hundred pixels each while sharing a column with the main chart.
+- **Positions table** *(moved to `/portfolio/` 2026-09-05)* — full width, beneath the heatmap and
+  performance chart: ticker (with chip and company name), quantity, avg cost, current price,
   unrealized P&L, % change, on hairline separators.
+- **Trade history table** *(added 2026-09-05, on `/history/`)* — every fill, newest first, past
+  tense on both sides ("Bought", "Sold"). Carries the same columns as the positions table's trade
+  shape plus order value and realized P&L, which is signed and glyphed on a sale and an em dash —
+  not a `0.00`, which would read as "broke even" — on a buy, since a buy realizes nothing. Backed
+  by `GET /api/portfolio/trades` (§8).
 - **Trade ticket** — labelled symbol field, units field, live order value, and Sell / Buy actions
   joined in a segmented track. They are two actions rather than two states of one choice, so each
   half stays its own button with its own direction fill; the track is only what says they are a
@@ -643,6 +727,14 @@ include these elements:
   while waiting for the LLM. Trade executions and watchlist changes appear inline as receipts,
   carrying the instrument's chip and named in the tense that is true — a filled order reads
   "Bought 10 AAPL", a rejected one reads "Buy 10 AAPL".
+- **Onboarding tour** *(added 2026-09-05)* — five spotlight steps, `/` only, shown to a guest
+  (`session.kind === "guest"`) who has not dismissed it (`localStorage["trader-tour-seen"]`
+  unset). Points at the watchlist, the main chart, the trade ticket, the assistant, and the rail's
+  Portfolio link, one absolutely-positioned rect per step tracking its target's
+  `getBoundingClientRect()`. Skip, Escape, and the final step's Done all dismiss and write the
+  localStorage key; a reload mid-tour shows it again, deliberately, while the tour is still the
+  thing being evaluated. A target missing at a narrow viewport is skipped rather than spotlighting
+  a zero rect.
 - **Footer** — one hairline-topped line under the workspace, carrying what the numbers above are
   worth ("Simulated trading with virtual money — not financial advice") and a link to
   `/privacy/`. It wears the *muted* tone rather than the faint one its 11px size invites:
@@ -710,6 +802,11 @@ FastAPI serves the static frontend files and all API routes on port 8000.
 ### Serving a route that is a directory
 
 *Added 2026-08-25, with `/privacy/` (§10).*
+
+*Revised 2026-09-05: `/portfolio/` and `/history/` (§10) are two more directory routes, exported
+and served the same way. `TestExportedSubroutes` was written to cover exactly this — "any second
+page added later inherits the same trap" — and now parametrizes over all three routes
+(`privacy`, `portfolio`, `history`), not just the first.*
 
 `next.config.ts` sets `trailingSlash: true`, so the export emits one **directory** per route —
 `privacy/index.html`, not `privacy.html`. The catch-all in `app/main.py` therefore tries two
