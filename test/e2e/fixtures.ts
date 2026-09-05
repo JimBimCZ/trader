@@ -1,5 +1,23 @@
 import { test as base, expect, type Page } from "@playwright/test";
 
+export const BASE_URL = process.env.BASE_URL ?? "http://localhost:8000";
+
+/**
+ * The state a browser is in once the onboarding tour has been dismissed.
+ *
+ * The tour scrims the whole viewport for any guest who has not seen it,
+ * and every test starts in a fresh context -- so without this, the scrim
+ * intercepts every click in the suite. Applied once in playwright.config.ts
+ * so contexts the fixtures build inherit it; auth.spec.ts builds its own
+ * contexts by hand and passes it explicitly.
+ */
+export const tourDismissed = {
+  cookies: [],
+  origins: [
+    { origin: BASE_URL, localStorage: [{ name: "trader-tour-seen", value: "1" }] },
+  ],
+};
+
 /**
  * Every test starts from the seeded state.
  *

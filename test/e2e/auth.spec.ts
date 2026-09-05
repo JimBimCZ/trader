@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { dismissReceipt, goToPortfolio } from "./fixtures";
+import { dismissReceipt, goToPortfolio, tourDismissed } from "./fixtures";
 
 test.describe("guest sessions", () => {
   test("two browsers get two portfolios", async ({ browser }) => {
     // The property the whole per-user phase exists for, asserted through the
     // UI rather than the API: separate contexts mean separate cookie jars.
-    const first = await browser.newContext();
-    const second = await browser.newContext();
+    // browser.newContext() ignores the config's `use`, so the tour scrim has
+    // to be dismissed here by hand.
+    const first = await browser.newContext({ storageState: tourDismissed });
+    const second = await browser.newContext({ storageState: tourDismissed });
 
     const a = await first.newPage();
     await a.goto("/");
