@@ -100,6 +100,7 @@ class TradeRepository:
         price: float,
         *,
         is_demo: bool = False,
+        executed_at: str | None = None,
     ) -> Trade:
         """Append one fill.
 
@@ -107,6 +108,11 @@ class TradeRepository:
         deliberately absent from `Trade`: nothing above this repository needs
         to tell them apart, and the History view shows both, because a demo
         trade honestly describes how a demo position came to be.
+
+        `executed_at` overrides the timestamp, defaulting to `utcnow_iso()`.
+        It exists solely for the demo seed, which backdates its rows so the
+        History view opens on a spread rather than four fills bunched at
+        "just now" -- a live trade must never pass it.
         """
         trade = Trade(
             id=str(uuid.uuid4()),
@@ -114,7 +120,7 @@ class TradeRepository:
             side=side,
             quantity=quantity,
             price=price,
-            executed_at=utcnow_iso(),
+            executed_at=executed_at or utcnow_iso(),
         )
         await self._db.execute(
             """

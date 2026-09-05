@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.clock import utcnow_iso
+from app.clock import iso_seconds_ago, utcnow_iso
 from app.config import Settings
 from app.db import DEFAULT_WATCHLIST, Database, seed_user
+from app.db.seed import _DEMO_BACKFILL_SECONDS
 from tests.conftest import create_seeded_user
 
 
@@ -93,10 +94,24 @@ async def test_demo_seed_writes_holdings_trades_and_a_value_curve(db, settings):
     assert float(cash["cash_balance"]) == 4099.00
 
     trades = await db.fetch_all(
-        "SELECT ticker, side, is_demo FROM trades WHERE user_id = ?", ("demo_user",)
+        "SELECT ticker, side, is_demo, executed_at FROM trades WHERE user_id = ? "
+        "ORDER BY executed_at",
+        ("demo_user",),
     )
     assert len(trades) == 4
     assert all(t["side"] == "buy" and t["is_demo"] for t in trades)
+
+    # Staggered across the backfill window, not bunched at "just now" -- the
+    # whole reason the backing trades exist is to give the History view a
+    # plausible spread on first load.
+    executed_at = [t["executed_at"] for t in trades]
+    assert len(set(executed_at)) == 4
+    assert executed_at == sorted(executed_at)
+    now_iso = utcnow_iso()
+    oldest_cutoff = iso_seconds_ago(_DEMO_BACKFILL_SECONDS)
+    assert oldest_cutoff < executed_at[0] < now_iso
+    # The oldest trade is comfortably inside the window, not right at "now".
+    assert executed_at[0] < iso_seconds_ago(_DEMO_BACKFILL_SECONDS // 10)
 
     # More than the single t=0 point, so the Performance chart opens on a
     # curve rather than on "charting starts once two snapshots land".

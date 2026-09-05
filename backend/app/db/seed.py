@@ -114,8 +114,14 @@ async def _seed_demo_portfolio(db: Database, settings: Settings, user_id: str, n
     if existing is not None:
         return
 
+    # Staggered across the backfill window, oldest (AAPL) first, so the
+    # History view opens on a plausible trading history instead of four
+    # fills bunched at "just now" -- the whole reason the backing trades
+    # exist (design doc §4). Evenly spaced with a margin at each end so
+    # every trade sits comfortably inside the curve, never at its edge.
+    n = len(DEMO_HOLDINGS)
     basis = 0.0
-    for ticker, quantity, avg_cost in DEMO_HOLDINGS:
+    for index, (ticker, quantity, avg_cost) in enumerate(DEMO_HOLDINGS):
         canonical = canonicalize_ticker(ticker)
         basis += quantity * avg_cost
         await db.execute(
@@ -123,8 +129,14 @@ async def _seed_demo_portfolio(db: Database, settings: Settings, user_id: str, n
             "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, ticker) DO NOTHING",
             (str(uuid.uuid4()), user_id, canonical, quantity, avg_cost, now),
         )
+        trade_ago = int(_DEMO_BACKFILL_SECONDS * (n - index) / (n + 1))
         await TradeRepository(db, user_id).insert(
-            canonical, "buy", quantity, avg_cost, is_demo=True
+            canonical,
+            "buy",
+            quantity,
+            avg_cost,
+            is_demo=True,
+            executed_at=iso_seconds_ago(trade_ago),
         )
 
     cash = round_cash(settings.initial_cash - basis)
