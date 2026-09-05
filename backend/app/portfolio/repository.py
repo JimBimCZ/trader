@@ -162,6 +162,34 @@ class TradeRepository:
             for row in rows
         ]
 
+    async def list_all(self) -> list[Trade]:
+        """The whole log, oldest first, for a realized-P&L replay.
+
+        Unbounded on purpose: `replay_realized` needs every row before a sell
+        to know what basis it closed against, so a LIMIT here would produce
+        wrong numbers rather than fewer of them. Bounded in practice by the
+        guest expiry the cleanup cron applies.
+        """
+        rows = await self._db.fetch_all(
+            """
+            SELECT id, ticker, side, quantity, price, executed_at
+            FROM trades WHERE user_id = ?
+            ORDER BY executed_at ASC, seq ASC
+            """,
+            (self._user_id,),
+        )
+        return [
+            Trade(
+                id=row["id"],
+                ticker=row["ticker"],
+                side=row["side"],
+                quantity=float(row["quantity"]),
+                price=float(row["price"]),
+                executed_at=row["executed_at"],
+            )
+            for row in rows
+        ]
+
     async def delete_all(self) -> None:
         await self._db.execute("DELETE FROM trades WHERE user_id = ?", (self._user_id,))
 
