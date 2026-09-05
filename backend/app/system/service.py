@@ -80,13 +80,7 @@ class ResetService:
         state. A signed-in account does not: once the account is real,
         "reset" should not hand back a portfolio they never placed.
         """
-        kind_row = await self._db.fetch_one(
-            "SELECT kind FROM users_profile WHERE id = ?", (self._user_id,)
-        )
-        demo = (
-            self._settings.demo_portfolio and kind_row is not None and kind_row["kind"] == "guest"
-        )
-        await self._reset(demo=demo)
+        await self._reset(demo=None)
 
     async def reset_to_clean(self) -> None:
         """Wipe this user's state and re-seed them WITHOUT the demo.
@@ -95,8 +89,15 @@ class ResetService:
         """
         await self._reset(demo=False)
 
-    async def _reset(self, demo: bool) -> None:
-        """Wipe this user's state, re-seed them, and reconcile globally."""
+    async def _reset(self, demo: bool | None) -> None:
+        """Wipe this user's state, re-seed them, and reconcile globally.
+
+        `demo=None` means "decide from this user's kind" -- read inside the
+        transaction below, not before it. Reading it earlier, on its own
+        connection, would reopen the race the transaction exists to close: a
+        concurrent OAuth callback promoting this user between that read and
+        the reset could make a signed-in user's reset restore the demo.
+        """
         async with self._trade_lock, self._watchlist_lock:
             # Delete and re-seed in ONE transaction: the profile row must
             # never be committed-absent, because every per-user table has a
@@ -110,6 +111,15 @@ class ResetService:
                 await self._snapshots.delete_all()
                 await self._chat.delete_all()
                 await self._watchlist.delete_all()
+                if demo is None:
+                    kind_row = await self._db.fetch_one(
+                        "SELECT kind FROM users_profile WHERE id = ?", (self._user_id,)
+                    )
+                    demo = (
+                        self._settings.demo_portfolio
+                        and kind_row is not None
+                        and kind_row["kind"] == "guest"
+                    )
                 # Updated, not deleted and recreated: deleting the profile
                 # cascades the user out of existence and invalidates their
                 # cookie, so a reset would silently log them out.

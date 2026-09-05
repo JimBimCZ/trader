@@ -112,6 +112,38 @@ class TestDemoClearing:
 
         assert _portfolio(auth_client)["positions"] == held
 
+    def test_condition_one_alone_keeps_a_signed_in_users_positions(self, auth_client, monkeypatch):
+        """Isolates condition 1 from condition 2.
+
+        The test above passes even without the guest check, because the
+        trade it places gives `has_activity` a real reason to say yes. Here
+        `has_activity` is forced to report no activity on the second callback
+        too -- exactly what `decide()` itself does for a signed-in user
+        connecting a second provider (§5) -- so only `was_guest` stands
+        between this account and a wipe. Deleting `if not was_guest: return`
+        from `_clear_demo_if_untouched` makes this fail.
+        """
+        from app.identity import UserStore
+
+        _portfolio(auth_client)
+        _sign_in(auth_client, "google", "sub-1")
+        auth_client.post(
+            "/api/portfolio/trade",
+            json={"ticker": "GOOGL", "side": "buy", "quantity": 2},
+        )
+        held = _portfolio(auth_client)["positions"]
+        assert held != []
+
+        async def blind_to_activity(self, user_id):
+            return False
+
+        monkeypatch.setattr(UserStore, "has_activity", blind_to_activity)
+
+        # Same browser, same account, second provider.
+        _sign_in(auth_client, "github", "gh-sub-1")
+
+        assert _portfolio(auth_client)["positions"] == held
+
     def test_signing_in_on_a_fresh_browser_creates_a_clean_account(self, auth_client):
         """CREATE mints a guest to build on, so it seeds a demo too -- and
         must clear it for exactly the same reason PROMOTE does."""

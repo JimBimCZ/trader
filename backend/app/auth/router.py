@@ -214,9 +214,9 @@ async def _clear_demo_if_untouched(request: Request, user_id: str, was_guest: bo
     if not was_guest:
         return
     store = request.app.state.user_store
-    if await store.has_activity(user_id):
-        return
     try:
+        if await store.has_activity(user_id):
+            return
         await build_reset_service(request, user_id).reset_to_clean()
     except Exception:
         logger.exception("Could not clear the demo for %s; the sign-in stands", user_id)
