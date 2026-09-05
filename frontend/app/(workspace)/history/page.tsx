@@ -1,14 +1,12 @@
-/**
- * Placeholder until the trade log task fills this in.
- */
+"use client";
+
+import { TradeHistoryTable } from "@/components/portfolio/TradeHistoryTable";
+
+/** Every fill, newest first, and what each sale made. */
 export default function HistoryPage() {
   return (
-    <main className="flex flex-1 flex-col gap-3 lg:min-h-0">
-      <section className="rise card flex flex-col lg:min-h-0" aria-label="History">
-        <header className="card-title">
-          <span>History</span>
-        </header>
-      </section>
+    <main className="flex flex-1 flex-col lg:min-h-0">
+      <TradeHistoryTable />
     </main>
   );
 }
