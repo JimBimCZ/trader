@@ -196,7 +196,9 @@ class TestExportedSubroutes:
         assert f"{route} page" in response.text
 
     @pytest.mark.parametrize("route", EXPORTED_ROUTES)
-    def test_serves_the_same_route_without_its_trailing_slash(self, api_client, static_export, route):
+    def test_serves_the_same_route_without_its_trailing_slash(
+        self, api_client, static_export, route
+    ):
         """A hand-typed URL drops the slash; the link in the footer does not."""
         assert f"{route} page" in api_client.get(f"/{route}").text
 
