@@ -6,6 +6,7 @@ import { PANELS } from "@/components/layout/panels";
 import { WatchlistPanel } from "@/components/watchlist/WatchlistPanel";
 import { TradeBar } from "@/components/trade/TradeBar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { Tour } from "@/components/onboarding/Tour";
 
 // The chart bundles are the heaviest dependencies and none of them matter on
 // first paint.
@@ -35,6 +36,8 @@ export default function Page() {
       <div className="flex min-w-0 flex-col lg:min-h-0">
         <ChatPanel />
       </div>
+
+      <Tour />
     </main>
   );
 }
