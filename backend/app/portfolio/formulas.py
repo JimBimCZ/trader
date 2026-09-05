@@ -8,7 +8,7 @@ portfolio endpoint, or a snapshot.
 from __future__ import annotations
 
 from ..errors import ValuationUnavailableError
-from .models import EPSILON, Position, ValuedPosition
+from .models import EPSILON, Position, Trade, ValuedPosition
 
 
 def round_cash(value: float) -> float:
@@ -76,3 +76,40 @@ def total_value(cash: float, positions: list[Position], prices: dict[str, float]
             )
         total += position.quantity * price
     return round_cash(total)
+
+
+def replay_realized(trades: list[Trade]) -> dict[str, float | None]:
+    """Realized P&L per trade id, by replaying the log oldest-first.
+
+    Computed, never stored (D-57): `trades` is authoritative and positions
+    are a projection of it, so the basis a sell closed against is always
+    recoverable from the rows before it.
+
+    Callers must pass the WHOLE log, not a page of it. A sell's basis depends
+    on every buy that came before, so replaying a `limit`-truncated list
+    reports the wrong number on the oldest sells shown -- which are exactly
+    the ones a user scrolls back to check.
+
+    Buys map to None rather than 0.0: a buy realizes nothing, and 0.0 would
+    render as "broke even".
+    """
+    basis: dict[str, tuple[float, float]] = {}  # ticker -> (quantity, avg_cost)
+    out: dict[str, float | None] = {}
+
+    for trade in trades:
+        quantity, avg_cost = basis.get(trade.ticker, (0.0, 0.0))
+        if trade.side == "buy":
+            basis[trade.ticker] = (
+                round_quantity(quantity + trade.quantity),
+                buy_avg_cost(quantity, avg_cost, trade.quantity, trade.price),
+            )
+            out[trade.id] = None
+            continue
+
+        out[trade.id] = realized_pnl(trade.quantity, avg_cost, trade.price)
+        remaining = round_quantity(quantity - trade.quantity)
+        # Below epsilon the position is closed, and the next buy must start a
+        # fresh basis rather than inherit this one.
+        basis[trade.ticker] = (0.0, 0.0) if remaining <= EPSILON else (remaining, avg_cost)
+
+    return out
