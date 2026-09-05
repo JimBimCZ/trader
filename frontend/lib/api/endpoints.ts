@@ -12,6 +12,7 @@ import type {
   Session,
   SnapshotPoint,
   TradeReceipt,
+  TradeRecord,
 } from "../types";
 
 function toPosition(raw: RawPosition): Position {
@@ -87,6 +88,31 @@ export async function fetchPortfolioHistory(limit = 500): Promise<SnapshotPoint[
     `/api/portfolio/history?limit=${limit}`,
   );
   return raw.snapshots.map((s) => ({ totalValue: s.total_value, recordedAt: s.recorded_at }));
+}
+
+export async function fetchTrades(limit = 200): Promise<TradeRecord[]> {
+  const raw = await api.get<{
+    trades: {
+      id: string;
+      ticker: string;
+      side: "buy" | "sell";
+      quantity: number;
+      price: number;
+      executed_at: string;
+      value: number;
+      realized_pnl: number | null;
+    }[];
+  }>(`/api/portfolio/trades?limit=${limit}`);
+  return raw.trades.map((t) => ({
+    id: t.id,
+    ticker: t.ticker,
+    side: t.side,
+    quantity: t.quantity,
+    price: t.price,
+    executedAt: t.executed_at,
+    value: t.value,
+    realizedPnl: t.realized_pnl,
+  }));
 }
 
 export async function fetchWatchlist(): Promise<{ tickers: string[]; cap: number }> {

@@ -205,3 +205,35 @@ describe("the receipt a filled trade leaves behind", () => {
     expect(usePortfolioStore.getState().lastTrade).toBeNull();
   });
 });
+
+/**
+ * The trade log, fetched by its own page rather than by the boot sequence --
+ * see `tradesStatus` on the store.
+ */
+describe("the trade log", () => {
+  it("records a failed trade-log fetch rather than leaving it pending", async () => {
+    vi.spyOn(endpoints, "fetchTrades").mockRejectedValueOnce(new Error("offline"));
+
+    await expect(usePortfolioStore.getState().refreshTrades()).rejects.toThrow();
+    expect(usePortfolioStore.getState().tradesStatus).toBe("failed");
+  });
+
+  it("refreshes the trade log after a fill, so history is current", async () => {
+    // `FILLED` is the same fixture the receipt tests above use for a fill
+    // `executeTrade` hands back.
+    vi.spyOn(endpoints, "executeTrade").mockResolvedValueOnce(FILLED);
+    vi.spyOn(endpoints, "fetchPortfolio").mockResolvedValue({
+      cashBalance: 8087.6,
+      positions: [],
+      positionsValue: 0,
+      totalValue: 10012.4,
+      unrealizedPnl: 0,
+    });
+    vi.spyOn(endpoints, "fetchPortfolioHistory").mockResolvedValue([]);
+    const trades = vi.spyOn(endpoints, "fetchTrades").mockResolvedValue([]);
+
+    await usePortfolioStore.getState().trade("AAPL", "buy", 1);
+
+    expect(trades).toHaveBeenCalled();
+  });
+});

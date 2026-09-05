@@ -1,9 +1,21 @@
 "use client";
 
 import { create } from "zustand";
-import { executeTrade, fetchPortfolio, fetchPortfolioHistory } from "@/lib/api/endpoints";
+import {
+  executeTrade,
+  fetchPortfolio,
+  fetchPortfolioHistory,
+  fetchTrades,
+} from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
-import type { LoadState, Portfolio, Position, SnapshotPoint, TradeReceipt } from "@/lib/types";
+import type {
+  LoadState,
+  Portfolio,
+  Position,
+  SnapshotPoint,
+  TradeReceipt,
+  TradeRecord,
+} from "@/lib/types";
 
 interface PortfolioState {
   cashBalance: number;
@@ -16,6 +28,11 @@ interface PortfolioState {
    *  PnlChart on mount rather than by the boot sequence, so `status` says
    *  nothing about whether these points have arrived. */
   historyStatus: LoadState;
+  trades: TradeRecord[];
+  /** Tracked separately for the same reason `historyStatus` is: the trade log
+   *  comes from its own endpoint, fetched by the history page rather than by
+   *  the boot sequence, so `status` says nothing about whether it has landed. */
+  tradesStatus: LoadState;
   tradeError: string | null;
   tradePending: boolean;
   /** The last fill placed from the trade ticket, until the user dismisses it.
@@ -24,6 +41,7 @@ interface PortfolioState {
   lastTrade: TradeReceipt | null;
   refresh: () => Promise<void>;
   refreshHistory: () => Promise<void>;
+  refreshTrades: () => Promise<void>;
   trade: (ticker: string, side: "buy" | "sell", quantity: number) => Promise<boolean>;
   clearTradeError: () => void;
   dismissTrade: () => void;
@@ -47,6 +65,8 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   history: [],
   status: "pending" as LoadState,
   historyStatus: "pending" as LoadState,
+  trades: [],
+  tradesStatus: "pending" as LoadState,
   tradeError: null,
   tradePending: false,
   lastTrade: null,
@@ -65,6 +85,15 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
       set({ history: await fetchPortfolioHistory(), historyStatus: "ready" });
     } catch (error) {
       set({ historyStatus: "failed" });
+      throw error;
+    }
+  },
+
+  refreshTrades: async () => {
+    try {
+      set({ trades: await fetchTrades(), tradesStatus: "ready" });
+    } catch (error) {
+      set({ tradesStatus: "failed" });
       throw error;
     }
   },
@@ -98,7 +127,7 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
     // fetched, and so neither rejection escapes: each call has already
     // recorded its own outcome on the store, which is what the panels render
     // -- with their own Retry.
-    await Promise.allSettled([get().refresh(), get().refreshHistory()]);
+    await Promise.allSettled([get().refresh(), get().refreshHistory(), get().refreshTrades()]);
     set({ tradePending: false });
     return true;
   },

@@ -116,6 +116,21 @@ export interface SnapshotPoint {
   recordedAt: string;
 }
 
+/** One executed fill, as the history view renders it. */
+export interface TradeRecord {
+  id: string;
+  ticker: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  executedAt: string;
+  /** quantity × price, rounded server-side so the column always adds up. */
+  value: number;
+  /** Null on every buy — a buy realizes nothing, and 0 would read as
+   *  "broke even". The table prints an em dash for it. */
+  realizedPnl: number | null;
+}
+
 export interface HistoryPoint {
   timestamp: number;
   price: number;
